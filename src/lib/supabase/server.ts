@@ -21,6 +21,13 @@ export async function createClient() {
           }
         },
       },
+      global: {
+        // Next.js patches the global fetch and caches GET requests by default.
+        // Supabase queries must never be cached, otherwise things like a
+        // user's role can appear stale after being changed in the database.
+        fetch: (url: RequestInfo | URL, options?: RequestInit) =>
+          fetch(url, { ...options, cache: "no-store" }),
+      },
     }
   );
 }

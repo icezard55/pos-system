@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -73,7 +74,14 @@ export default function LoginPage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">รหัสผ่าน</label>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-sm font-medium text-gray-700">รหัสผ่าน</label>
+              {mode === "login" && (
+                <Link href="/forgot-password" className="text-xs text-brand hover:underline">
+                  ลืมรหัสผ่าน?
+                </Link>
+              )}
+            </div>
             <input
               type="password"
               minLength={6}

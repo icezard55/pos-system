@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { CartLine, Product } from "@/lib/types";
+import { splitVat } from "@/lib/types";
 
 export default function PosClient({ products }: { products: Product[] }) {
   const supabase = createClient();
@@ -14,6 +15,7 @@ export default function PosClient({ products }: { products: Product[] }) {
   const [customerName, setCustomerName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -23,6 +25,7 @@ export default function PosClient({ products }: { products: Product[] }) {
 
   const subtotal = cart.reduce((s, l) => s + l.product.sell_price * l.qty, 0);
   const total = Math.max(subtotal - (Number(discount) || 0), 0);
+  const { base: vatBase, vat } = splitVat(total);
 
   function addToCart(p: Product) {
     setCart((prev) => {
@@ -44,6 +47,27 @@ export default function PosClient({ products }: { products: Product[] }) {
 
   function removeLine(productId: string) {
     setCart((prev) => prev.filter((l) => l.product.id !== productId));
+  }
+
+  // Barcode scanners act as a keyboard: they type the code fast and end with Enter.
+  // Pressing Enter in the search box with an exact SKU/barcode match adds it straight to the cart.
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    const code = search.trim().toLowerCase();
+    if (!code) return;
+    const exact = products.find((p) => (p.sku ?? "").toLowerCase() === code);
+    if (exact) {
+      if (exact.stock_qty <= 0) {
+        setScanMsg(`"${exact.name}" สินค้าหมดสต๊อก`);
+      } else {
+        addToCart(exact);
+        setScanMsg(`เพิ่ม "${exact.name}" แล้ว`);
+      }
+      setSearch("");
+    } else {
+      setScanMsg(`ไม่พบสินค้ารหัส "${search}"`);
+    }
+    window.setTimeout(() => setScanMsg(null), 2500);
   }
 
   async function handleCheckout() {
@@ -77,11 +101,15 @@ export default function PosClient({ products }: { products: Product[] }) {
         <h1 className="mb-4 text-2xl font-bold">บันทึกการขาย</h1>
         <input
           autoFocus
-          placeholder="ค้นหาสินค้าด้วยชื่อหรือรหัส..."
+          placeholder="ค้นหาสินค้าด้วยชื่อหรือรหัส หรือยิงบาร์โค้ด..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="mb-4 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
+          onKeyDown={handleSearchKeyDown}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
         />
+        <p className="mb-4 mt-1 text-xs text-gray-400">
+          {scanMsg ?? "เชื่อมเครื่องสแกนบาร์โค้ด (USB/บลูทูธ) แล้วยิงรหัสสินค้าที่ช่องนี้ได้เลย ระบบจะเพิ่มลงตะกร้าอัตโนมัติ"}
+        </p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {filtered.map((p) => (
             <button
@@ -150,6 +178,10 @@ export default function PosClient({ products }: { products: Product[] }) {
           <div className="flex justify-between text-lg font-bold text-gray-900">
             <span>สุทธิ</span>
             <span>฿{total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div className="flex justify-between text-xs text-gray-400">
+            <span>ในนี้เป็น VAT 7% (รวมในราคาแล้ว)</span>
+            <span>฿{vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })} (ก่อน VAT ฿{vatBase.toLocaleString("th-TH", { minimumFractionDigits: 2 })})</span>
           </div>
 
           {error && <p className="text-sm text-red-600">{error}</p>}

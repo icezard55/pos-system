@@ -1,9 +1,11 @@
 "use client";
 import Link from "next/link";
 import type { Sale, SaleItem } from "@/lib/types";
+import { splitVat } from "@/lib/types";
 
 export default function ReceiptClient({ sale, items }: { sale: Sale; items: SaleItem[] }) {
   const dt = new Date(sale.created_at);
+  const { base, vat } = splitVat(Number(sale.total));
 
   return (
     <div className="min-h-screen bg-gray-100 py-8">
@@ -44,6 +46,17 @@ export default function ReceiptClient({ sale, items }: { sale: Sale; items: Sale
             <span>ชำระโดย</span>
             <span>{sale.payment_method === "cash" ? "เงินสด" : sale.payment_method === "transfer" ? "โอนเงิน" : "บัตร"}</span>
           </div>
+        </div>
+        <div className="mt-2 space-y-0.5 border-t border-dashed pt-2 text-xs text-gray-500">
+          <div className="flex justify-between">
+            <span>มูลค่าสินค้า (ไม่รวม VAT)</span>
+            <span>฿{base.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>ภาษีมูลค่าเพิ่ม (VAT 7%)</span>
+            <span>฿{vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+          </div>
+          <p className="pt-1 text-center text-[10px] text-gray-400">(ราคาสินค้ารวมภาษีมูลค่าเพิ่มแล้ว)</p>
         </div>
         <p className="mt-4 text-center text-xs text-gray-400">ขอบคุณที่ใช้บริการ</p>
 

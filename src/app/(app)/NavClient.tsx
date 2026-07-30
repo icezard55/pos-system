@@ -6,9 +6,12 @@ import { createClient } from "@/lib/supabase/client";
 const links = [
   { href: "/dashboard", label: "แดชบอร์ด", icon: "📊", roles: ["admin", "cashier"] },
   { href: "/pos", label: "บันทึกการขาย", icon: "🛒", roles: ["admin", "cashier"] },
+  { href: "/shift", label: "เปิด-ปิดกะ", icon: "💰", roles: ["admin", "cashier"] },
   { href: "/sales", label: "ประวัติการขาย", icon: "🧾", roles: ["admin", "cashier"] },
   { href: "/products", label: "จัดการสต๊อกสินค้า", icon: "📦", roles: ["admin"] },
+  { href: "/stock-adjustments", label: "ปรับสต๊อก", icon: "🛠️", roles: ["admin"] },
   { href: "/reports", label: "รายงาน", icon: "📈", roles: ["admin"] },
+  { href: "/users", label: "จัดการผู้ใช้", icon: "👥", roles: ["admin"] },
 ];
 
 export default function NavClient({

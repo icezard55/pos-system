@@ -12,6 +12,7 @@ export default function SettingsClient({ initialSettings }: { initialSettings: S
   const [address, setAddress] = useState(initialSettings?.address ?? "");
   const [phone, setPhone] = useState(initialSettings?.phone ?? "");
   const [webhookUrl, setWebhookUrl] = useState(initialSettings?.low_stock_webhook_url ?? "");
+  const [bahtPerPoint, setBahtPerPoint] = useState(String(initialSettings?.baht_per_point ?? 100));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export default function SettingsClient({ initialSettings }: { initialSettings: S
         p_address: address || null,
         p_phone: phone || null,
         p_low_stock_webhook_url: webhookUrl || null,
+        p_baht_per_point: Number(bahtPerPoint) || 100,
       });
       if (error) throw error;
       setSuccess("บันทึกข้อมูลร้านสำเร็จ");
@@ -76,6 +78,26 @@ export default function SettingsClient({ initialSettings }: { initialSettings: S
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">เบอร์โทร</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm" />
+        </div>
+
+        <h2 className="mt-2 font-semibold text-gray-800">แต้มสะสมลูกค้า</h2>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">ยอดซื้อกี่บาท ได้ 1 แต้ม</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={1}
+              step="0.01"
+              value={bahtPerPoint}
+              onChange={(e) => setBahtPerPoint(e.target.value)}
+              className="w-32 rounded-lg border px-3 py-2 text-sm"
+            />
+            <span className="text-sm text-gray-500">บาท / 1 แต้ม</span>
+          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            ค่าเริ่มต้นคือ 100 บาทต่อ 1 แต้ม (ซื้อครบ 100 บาทได้ 1 แต้ม) เปลี่ยนได้ตามต้องการ เช่น ใส่ 50
+            หมายถึงซื้อครบ 50 บาทได้ 1 แต้ม การให้แต้มจะมีผลเฉพาะบิลที่ผูกกับลูกค้า/สมาชิกเท่านั้น
+          </p>
         </div>
 
         <h2 className="mt-2 font-semibold text-gray-800">แจ้งเตือนสต๊อกต่ำ</h2>

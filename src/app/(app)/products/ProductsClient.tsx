@@ -146,13 +146,37 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     XLSX.writeFile(wb, "template_นำเข้าสินค้า.xlsx");
   }
 
+  function downloadCurrentProducts() {
+    // same column layout as the import template, but filled with every
+    // product currently in the system — edit this file and re-import it
+    // to bulk-update prices/stock/etc.
+    const ws = XLSX.utils.json_to_sheet(
+      products.map((p) => ({
+        "รหัสสินค้า": p.sku ?? "",
+        "ชื่อสินค้า": p.name,
+        "หมวดหมู่": p.category ?? "",
+        "หน่วย": p.unit,
+        "ราคาทุน": Number(p.cost_price),
+        "ราคาขาย": Number(p.sell_price),
+        "จำนวนคงเหลือ": Number(p.stock_qty),
+        "จุดสั่งซื้อ": Number(p.low_stock_threshold),
+      }))
+    );
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "products");
+    XLSX.writeFile(wb, `สินค้าในระบบ_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">จัดการสต๊อกสินค้า</h1>
         <div className="flex flex-wrap gap-2">
+          <button onClick={downloadCurrentProducts} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
+            ⬇️ ดาวน์โหลดสินค้าในระบบ
+          </button>
           <button onClick={downloadTemplate} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
-            ⬇️ ดาวน์โหลดเทมเพลต Excel
+            ⬇️ ดาวน์โหลดเทมเพลตเปล่า
           </button>
           <label className="cursor-pointer rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
             📥 นำเข้าจาก Excel
@@ -163,6 +187,12 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
           </button>
         </div>
       </div>
+
+      <p className="mb-4 text-xs text-gray-400">
+        "ดาวน์โหลดสินค้าในระบบ" จะได้ไฟล์ Excel ที่มีสินค้าทั้งหมดตอนนี้ แก้ไขราคา/จำนวน หรือเพิ่มแถวสินค้าใหม่ต่อท้ายได้เลย
+        แล้วกด "นำเข้าจาก Excel" กลับเข้าไป — ระบบจะ<span className="font-medium text-gray-500">แทนที่ค่าราคาและจำนวนคงเหลือ</span>ของสินค้าที่มีรหัส (SKU) ตรงกัน
+        ด้วยค่าล่าสุดในไฟล์ (ไม่ใช่การบวกเพิ่ม) ส่วนแถวที่เป็นสินค้าใหม่จะถูกเพิ่มเข้าระบบตามปกติ
+      </p>
 
       {msg && <div className="mb-4 rounded-lg bg-blue-50 px-4 py-2 text-sm text-blue-700">{msg}</div>}
 

@@ -110,6 +110,7 @@ export interface ShopSettings {
   address: string | null;
   phone: string | null;
   low_stock_webhook_url: string | null;
+  baht_per_point: number;
   updated_at: string;
 }
 

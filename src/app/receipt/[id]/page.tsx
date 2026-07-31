@@ -10,6 +10,8 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
   if (!sale) notFound();
 
   const { data: items } = await supabase.from("sale_items").select("*").eq("sale_id", id);
+  const { data: payments } = await supabase.from("sale_payments").select("*").eq("sale_id", id);
+  const { data: shopSettings } = await supabase.from("shop_settings").select("*").eq("id", true).maybeSingle();
 
-  return <ReceiptClient sale={sale} items={items ?? []} />;
+  return <ReceiptClient sale={sale} items={items ?? []} payments={payments ?? []} shopSettings={shopSettings ?? null} />;
 }

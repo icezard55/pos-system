@@ -5,12 +5,30 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import type { Sale } from "@/lib/types";
 
-export default function SalesClient({ sales, isAdmin }: { sales: Sale[]; isAdmin: boolean }) {
+export default function SalesClient({
+  sales,
+  isAdmin,
+  startDate,
+  endDate,
+  currentUserEmail,
+}: {
+  sales: Sale[];
+  isAdmin: boolean;
+  startDate: string;
+  endDate: string;
+  currentUserEmail: string;
+}) {
   const router = useRouter();
   const supabase = createClient();
   const [search, setSearch] = useState("");
+  const [start, setStart] = useState(startDate);
+  const [end, setEnd] = useState(endDate);
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [voidTarget, setVoidTarget] = useState<Sale | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [reauthError, setReauthError] = useState<string | null>(null);
 
   const filtered = sales.filter(
     (s) => s.sale_no.toLowerCase().includes(search.toLowerCase()) || (s.customer_name ?? "").toLowerCase().includes(search.toLowerCase())
@@ -20,16 +38,35 @@ export default function SalesClient({ sales, isAdmin }: { sales: Sale[]; isAdmin
     .filter((s) => s.status !== "void" && new Date(s.created_at).toDateString() === new Date().toDateString())
     .reduce((sum, s) => sum + Number(s.total), 0);
 
-  async function handleVoid(sale: Sale) {
-    if (!confirm(`ยืนยันยกเลิกบิล ${sale.sale_no}? สต๊อกสินค้าจะถูกคืนกลับอัตโนมัติ และไม่สามารถย้อนกลับได้`)) return;
-    setError(null);
-    setVoidingId(sale.id);
+  function applyRange() {
+    router.push(`/sales?start=${start}&end=${end}`);
+  }
+
+  function openVoidConfirm(sale: Sale) {
+    setVoidTarget(sale);
+    setConfirmPassword("");
+    setReauthError(null);
+  }
+
+  async function handleConfirmVoid(e: React.FormEvent) {
+    e.preventDefault();
+    if (!voidTarget) return;
+    setReauthError(null);
+    setVoidingId(voidTarget.id);
     try {
-      const { error } = await supabase.rpc("void_sale", { p_sale_id: sale.id });
+      // require the admin to re-enter their own password before an irreversible void
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: currentUserEmail,
+        password: confirmPassword,
+      });
+      if (authError) throw new Error("รหัสผ่านไม่ถูกต้อง");
+
+      const { error } = await supabase.rpc("void_sale", { p_sale_id: voidTarget.id });
       if (error) throw error;
+      setVoidTarget(null);
       router.refresh();
     } catch (err: any) {
-      setError(err.message ?? "ยกเลิกบิลไม่สำเร็จ");
+      setReauthError(err.message ?? "ยกเลิกบิลไม่สำเร็จ");
     } finally {
       setVoidingId(null);
     }
@@ -44,6 +81,50 @@ export default function SalesClient({ sales, isAdmin }: { sales: Sale[]; isAdmin
         </p>
       </div>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
+      {voidTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form onSubmit={handleConfirmVoid} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="mb-1 font-bold text-gray-800">ยืนยันยกเลิกบิล {voidTarget.sale_no}</h2>
+            <p className="mb-3 text-xs text-gray-500">สต๊อกสินค้าจะถูกคืนกลับอัตโนมัติ และไม่สามารถย้อนกลับได้ กรุณายืนยันตัวตนด้วยรหัสผ่านของคุณ</p>
+            <input
+              type="password"
+              autoFocus
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="รหัสผ่านของคุณ"
+              required
+              className="mb-3 w-full rounded-lg border px-3 py-2 text-sm"
+            />
+            {reauthError && <p className="mb-3 text-sm text-red-600">{reauthError}</p>}
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={voidingId === voidTarget.id}
+                className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {voidingId === voidTarget.id ? "กำลังยกเลิก..." : "ยืนยันยกเลิกบิล"}
+              </button>
+              <button type="button" onClick={() => setVoidTarget(null)} className="flex-1 rounded-lg border py-2 text-sm hover:bg-gray-50">
+                ยกเลิก
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-2xl bg-white p-4 shadow-sm">
+        <div>
+          <label className="mb-1 block text-xs text-gray-600">จากวันที่</label>
+          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded-lg border px-3 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-gray-600">ถึงวันที่</label>
+          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="rounded-lg border px-3 py-1.5 text-sm" />
+        </div>
+        <button onClick={applyRange} className="rounded-lg border px-4 py-1.5 text-sm hover:bg-gray-50">แสดงผล</button>
+      </div>
+
       <input
         placeholder="ค้นหาเลขที่บิลหรือชื่อลูกค้า..."
         value={search}
@@ -87,11 +168,10 @@ export default function SalesClient({ sales, isAdmin }: { sales: Sale[]; isAdmin
                       <Link href={`/receipt/${s.id}`} className="text-brand hover:underline">ดูใบเสร็จ</Link>
                       {isAdmin && !isVoid && (
                         <button
-                          onClick={() => handleVoid(s)}
-                          disabled={voidingId === s.id}
-                          className="text-red-600 hover:underline disabled:opacity-50"
+                          onClick={() => openVoidConfirm(s)}
+                          className="text-red-600 hover:underline"
                         >
-                          {voidingId === s.id ? "กำลังยกเลิก..." : "ยกเลิกบิล"}
+                          ยกเลิกบิล
                         </button>
                       )}
                     </div>

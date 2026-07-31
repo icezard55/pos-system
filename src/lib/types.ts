@@ -28,6 +28,8 @@ export interface SaleItem {
   unit_price: number;
   qty: number;
   line_total: number;
+  discount: number;
+  cost_price: number;
 }
 
 export interface Sale {
@@ -35,17 +37,90 @@ export interface Sale {
   sale_no: string;
   cashier_id: string | null;
   customer_name: string | null;
+  customer_id: string | null;
+  customer_tax_id: string | null;
+  customer_address: string | null;
   subtotal: number;
   discount: number;
   total: number;
   payment_method: string;
   status: string;
   created_at: string;
+  shift_id: string | null;
 }
+
+export interface SalePayment {
+  id: string;
+  sale_id: string;
+  method: PaymentMethod;
+  amount: number;
+}
+
+export type PaymentMethod = "cash" | "transfer" | "card" | "credit";
 
 export interface CartLine {
   product: Product;
   qty: number;
+  discount: number;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string | null;
+  points: number;
+  credit_balance: number;
+  credit_limit: number;
+  note: string | null;
+  created_at: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string | null;
+  address: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplier_id: string | null;
+  status: "draft" | "received" | "cancelled";
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+  received_by: string | null;
+  received_at: string | null;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  po_id: string;
+  product_id: string;
+  qty: number;
+  unit_cost: number;
+}
+
+export interface ShopSettings {
+  id: boolean;
+  shop_name: string;
+  tax_id: string | null;
+  address: string | null;
+  phone: string | null;
+  low_stock_webhook_url: string | null;
+  updated_at: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actor_id: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  detail: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export interface AppUser {

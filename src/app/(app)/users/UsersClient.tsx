@@ -26,7 +26,7 @@ export default function UsersClient({
     setError(null);
     setUpdatingId(user.id);
     try {
-      const { error } = await supabase.from("profiles").update({ role }).eq("id", user.id);
+      const { error } = await supabase.rpc("admin_update_role", { p_user_id: user.id, p_role: role });
       if (error) throw error;
       setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, role } : u)));
       router.refresh();

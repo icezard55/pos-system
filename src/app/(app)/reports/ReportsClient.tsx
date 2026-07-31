@@ -54,6 +54,7 @@ interface AccountsPayableRow {
   po_total: number;
   payment_status: "unpaid" | "pending_transfer" | "paid";
   note: string | null;
+  supplier_invoice_no: string | null;
 }
 
 function oneName(v: { name: string; unit?: string } | { name: string; unit?: string }[] | null): string {
@@ -204,6 +205,7 @@ export default function ReportsClient({
     const payableSheet = XLSX.utils.json_to_sheet(
       accountsPayable.map((po) => ({
         ผู้จัดจำหน่าย: po.supplier_name,
+        เลขที่บิล: po.supplier_invoice_no ?? "",
         วันที่รับเข้า: new Date(po.received_at).toLocaleString("th-TH"),
         มูลค่า: Number(Number(po.po_total).toFixed(2)),
         สถานะ: payableStatusLabel[po.payment_status],
@@ -431,6 +433,7 @@ export default function ReportsClient({
             <thead>
               <tr className="border-b text-left text-gray-500">
                 <th className="py-2">ผู้จัดจำหน่าย</th>
+                <th className="py-2">เลขที่บิล</th>
                 <th className="py-2">วันที่รับเข้า</th>
                 <th className="py-2 text-right">ค้างมาแล้ว</th>
                 <th className="py-2 text-right">มูลค่า</th>
@@ -441,6 +444,7 @@ export default function ReportsClient({
               {accountsPayable.map((po) => (
                 <tr key={po.id} className="border-b last:border-0">
                   <td className="py-2">{po.supplier_name}</td>
+                  <td className="py-2 text-gray-500">{po.supplier_invoice_no ?? "-"}</td>
                   <td className="py-2 text-gray-500">{new Date(po.received_at).toLocaleDateString("th-TH")}</td>
                   <td className="py-2 text-right text-gray-500">{daysOutstanding(po.received_at)} วัน</td>
                   <td className="py-2 text-right font-medium">฿{Number(po.po_total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
@@ -451,7 +455,7 @@ export default function ReportsClient({
                   </td>
                 </tr>
               ))}
-              {accountsPayable.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-gray-400">ไม่มีเจ้าหนี้การค้าคงค้าง 🎉</td></tr>}
+              {accountsPayable.length === 0 && <tr><td colSpan={6} className="py-6 text-center text-gray-400">ไม่มีเจ้าหนี้การค้าคงค้าง 🎉</td></tr>}
             </tbody>
           </table>
           <p className="mt-3 text-xs text-gray-400">

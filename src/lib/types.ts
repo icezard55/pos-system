@@ -98,6 +98,7 @@ export interface PurchaseOrder {
   payment_status: POPaymentStatus;
   paid_at: string | null;
   po_total: number | null;
+  supplier_invoice_no: string | null;
 }
 
 export interface PurchaseOrderItem {

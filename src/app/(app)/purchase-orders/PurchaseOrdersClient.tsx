@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -36,6 +36,7 @@ interface PO {
   payment_status: PaymentStatus;
   paid_at: string | null;
   po_total: number | null;
+  supplier_invoice_no: string | null;
   suppliers: { name: string } | { name: string }[] | null;
   purchase_order_items: POItem[];
 }
@@ -63,6 +64,69 @@ interface DraftLine {
   unitCost: string;
 }
 
+function productLabel(p: { sku: string | null; name: string } | undefined): string {
+  if (!p) return "";
+  return p.sku ? `[${p.sku}] ${p.name}` : p.name;
+}
+
+function ProductAutocomplete({
+  products,
+  value,
+  onSelect,
+}: {
+  products: ProductOption[];
+  value: string;
+  onSelect: (id: string) => void;
+}) {
+  const [query, setQuery] = useState(() => productLabel(products.find((p) => p.id === value)));
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setQuery(productLabel(products.find((p) => p.id === value)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = (
+    q ? products.filter((p) => `${p.sku ?? ""} ${p.name}`.toLowerCase().includes(q)) : products
+  ).slice(0, 30);
+
+  return (
+    <div className="relative min-w-[10rem] flex-1">
+      <input
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="พิมพ์รหัสหรือชื่อสินค้าเพื่อค้นหา..."
+        className="w-full rounded-lg border px-2 py-1.5 text-sm"
+      />
+      {open && (
+        <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-lg border bg-white shadow-lg">
+          {filtered.length === 0 && <p className="px-3 py-2 text-xs text-gray-400">ไม่พบสินค้า</p>}
+          {filtered.map((p) => (
+            <button
+              type="button"
+              key={p.id}
+              onMouseDown={() => {
+                onSelect(p.id);
+                setQuery(productLabel(p));
+                setOpen(false);
+              }}
+              className="block w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50"
+            >
+              {productLabel(p)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PurchaseOrdersClient({
   suppliers,
   products,
@@ -77,6 +141,7 @@ export default function PurchaseOrdersClient({
   const [showCreate, setShowCreate] = useState(false);
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [note, setNote] = useState("");
+  const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([{ productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
   const [busy, setBusy] = useState(false);
   const [receivingId, setReceivingId] = useState<string | null>(null);
@@ -85,6 +150,8 @@ export default function PurchaseOrdersClient({
 
   const payable = orders.filter((po) => po.status === "received" && po.payment_status !== "paid");
   const payableTotal = payable.reduce((s, po) => s + Number(po.po_total ?? 0), 0);
+  const receivedOrders = orders.filter((po) => po.status === "received");
+  const totalReceivedValue = receivedOrders.reduce((s, po) => s + Number(po.po_total ?? 0), 0);
 
   function addLine() {
     setLines((prev) => [...prev, { productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
@@ -112,10 +179,12 @@ export default function PurchaseOrdersClient({
         p_supplier_id: supplierId || null,
         p_items: items,
         p_note: note || null,
+        p_supplier_invoice_no: supplierInvoiceNo || null,
       });
       if (error) throw error;
       setLines([{ productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
       setNote("");
+      setSupplierInvoiceNo("");
       setShowCreate(false);
       router.refresh();
     } catch (err: any) {
@@ -166,41 +235,65 @@ export default function PurchaseOrdersClient({
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
-      <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500">เจ้าหนี้การค้าคงค้าง (ยังไม่จ่าย + รอโอน)</p>
-            <p className="mt-1 text-2xl font-bold text-red-600">฿{payableTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">เจ้าหนี้การค้าคงค้าง (ยังไม่จ่าย + รอโอน)</p>
+              <p className="mt-1 text-2xl font-bold text-red-600">฿{payableTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+            </div>
+            <p className="text-sm text-gray-400">{payable.length} ใบ</p>
           </div>
-          <p className="text-sm text-gray-400">{payable.length} ใบ</p>
+        </div>
+        <div className="rounded-2xl bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">ผลรวมมูลค่าสินค้าที่รับเข้าทั้งหมด</p>
+              <p className="mt-1 text-2xl font-bold text-brand">฿{totalReceivedValue.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+            </div>
+            <p className="text-sm text-gray-400">{receivedOrders.length} ใบ</p>
+          </div>
         </div>
       </div>
 
       {showCreate && (
         <form onSubmit={handleCreate} className="mb-8 space-y-3 rounded-2xl bg-white p-5 shadow-sm">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">ผู้จัดจำหน่าย</label>
-            <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm">
-              <option value="">- ไม่ระบุ -</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">ผู้จัดจำหน่าย</label>
+              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm">
+                <option value="">- ไม่ระบุ -</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">เลขที่บิล/ใบกำกับของผู้จัดจำหน่าย</label>
+              <input
+                value={supplierInvoiceNo}
+                onChange={(e) => setSupplierInvoiceNo(e.target.value)}
+                placeholder="เช่น INV-2026-0001"
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+              />
+            </div>
           </div>
 
           <div className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">รายการสินค้า</label>
             {lines.map((l, idx) => (
               <div key={idx} className="flex flex-wrap items-center gap-2">
-                <select
+                <ProductAutocomplete
+                  products={products}
                   value={l.productId}
-                  onChange={(e) => updateLine(idx, { productId: e.target.value })}
-                  className="flex-1 min-w-[10rem] rounded-lg border px-2 py-1.5 text-sm"
-                >
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>{p.sku ? `[${p.sku}] ` : ""}{p.name}</option>
-                  ))}
-                </select>
+                  onSelect={(id) => {
+                    const p = products.find((pp) => pp.id === id);
+                    updateLine(idx, {
+                      productId: id,
+                      unitCost: l.unitCost || (p ? String(p.cost_price) : l.unitCost),
+                    });
+                  }}
+                />
                 <input
                   type="number" min={0} placeholder="จำนวน"
                   value={l.qty} onChange={(e) => updateLine(idx, { qty: e.target.value })}
@@ -232,7 +325,14 @@ export default function PurchaseOrdersClient({
           <div key={po.id} className="rounded-2xl bg-white p-5 shadow-sm">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="font-semibold">{oneName(po.suppliers)}</p>
+                <p className="font-semibold">
+                  {oneName(po.suppliers)}
+                  {po.supplier_invoice_no && (
+                    <span className="ml-2 rounded bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-600">
+                      เลขที่บิล: {po.supplier_invoice_no}
+                    </span>
+                  )}
+                </p>
                 <p className="text-xs text-gray-500">
                   สร้างเมื่อ {new Date(po.created_at).toLocaleString("th-TH")}
                   {po.received_at && ` · รับเข้าเมื่อ ${new Date(po.received_at).toLocaleString("th-TH")}`}

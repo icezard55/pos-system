@@ -52,6 +52,7 @@ export default async function ReportsPage({
     .order("name");
 
   const { data: outOfStock } = await supabase.rpc("report_out_of_stock");
+  const { data: accountsPayable } = await supabase.rpc("report_accounts_payable");
 
   const byDay: Record<string, { total: number; profit: number }> = {};
   (sales ?? []).forEach((s) => {
@@ -97,6 +98,7 @@ export default async function ReportsPage({
       receivedPOs={(receivedPOs as any) ?? []}
       stockValuation={stockValuation ?? []}
       outOfStock={outOfStock ?? []}
+      accountsPayable={accountsPayable ?? []}
     />
   );
 }

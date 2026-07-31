@@ -24,6 +24,8 @@ interface POItem {
   products: { name: string; unit: string } | { name: string; unit: string }[] | null;
 }
 
+type PaymentStatus = "unpaid" | "pending_transfer" | "paid";
+
 interface PO {
   id: string;
   supplier_id: string | null;
@@ -31,9 +33,24 @@ interface PO {
   note: string | null;
   created_at: string;
   received_at: string | null;
+  payment_status: PaymentStatus;
+  paid_at: string | null;
+  po_total: number | null;
   suppliers: { name: string } | { name: string }[] | null;
   purchase_order_items: POItem[];
 }
+
+const paymentLabel: Record<PaymentStatus, string> = {
+  unpaid: "ยังไม่จ่าย",
+  pending_transfer: "รอโอน",
+  paid: "จ่ายแล้ว",
+};
+
+const paymentBadgeClass: Record<PaymentStatus, string> = {
+  unpaid: "bg-red-100 text-red-700",
+  pending_transfer: "bg-yellow-100 text-yellow-700",
+  paid: "bg-green-100 text-green-700",
+};
 
 function oneName(v: { name: string } | { name: string }[] | null): string {
   if (!v) return "-";
@@ -63,7 +80,11 @@ export default function PurchaseOrdersClient({
   const [lines, setLines] = useState<DraftLine[]>([{ productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
   const [busy, setBusy] = useState(false);
   const [receivingId, setReceivingId] = useState<string | null>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const payable = orders.filter((po) => po.status === "received" && po.payment_status !== "paid");
+  const payableTotal = payable.reduce((s, po) => s + Number(po.po_total ?? 0), 0);
 
   function addLine() {
     setLines((prev) => [...prev, { productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
@@ -119,6 +140,21 @@ export default function PurchaseOrdersClient({
     }
   }
 
+  async function handlePaymentStatus(po: PO, status: PaymentStatus) {
+    if (status === "paid" && !confirm(`ยืนยันว่าจ่ายเงินให้ผู้จัดจำหน่ายรายนี้ครบแล้ว?`)) return;
+    setPayingId(po.id);
+    setError(null);
+    try {
+      const { error } = await supabase.rpc("update_po_payment_status", { p_po_id: po.id, p_status: status });
+      if (error) throw error;
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? "อัปเดตสถานะการจ่ายเงินไม่สำเร็จ");
+    } finally {
+      setPayingId(null);
+    }
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -129,6 +165,16 @@ export default function PurchaseOrdersClient({
       </div>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
+      <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-500">เจ้าหนี้การค้าคงค้าง (ยังไม่จ่าย + รอโอน)</p>
+            <p className="mt-1 text-2xl font-bold text-red-600">฿{payableTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+          </div>
+          <p className="text-sm text-gray-400">{payable.length} ใบ</p>
+        </div>
+      </div>
 
       {showCreate && (
         <form onSubmit={handleCreate} className="mb-8 space-y-3 rounded-2xl bg-white p-5 shadow-sm">
@@ -192,12 +238,14 @@ export default function PurchaseOrdersClient({
                   {po.received_at && ` · รับเข้าเมื่อ ${new Date(po.received_at).toLocaleString("th-TH")}`}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {po.status === "draft" && (
                   <span className="rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700">รอรับสินค้า</span>
                 )}
                 {po.status === "received" && (
-                  <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">รับเข้าแล้ว</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${paymentBadgeClass[po.payment_status]}`}>
+                    {paymentLabel[po.payment_status]}
+                  </span>
                 )}
                 {po.status === "draft" && (
                   <button
@@ -208,9 +256,27 @@ export default function PurchaseOrdersClient({
                     {receivingId === po.id ? "กำลังรับ..." : "รับสินค้าเข้า"}
                   </button>
                 )}
+                {po.status === "received" && po.payment_status !== "paid" && (
+                  <select
+                    value={po.payment_status}
+                    disabled={payingId === po.id}
+                    onChange={(e) => handlePaymentStatus(po, e.target.value as PaymentStatus)}
+                    className="rounded-lg border px-2 py-1.5 text-xs disabled:opacity-50"
+                  >
+                    <option value="unpaid">ยังไม่จ่าย</option>
+                    <option value="pending_transfer">รอโอน</option>
+                    <option value="paid">จ่ายแล้ว</option>
+                  </select>
+                )}
               </div>
             </div>
             {po.note && <p className="mb-2 text-xs text-gray-500">หมายเหตุ: {po.note}</p>}
+            {po.status === "received" && (
+              <p className="mb-2 text-xs text-gray-400">
+                มูลค่าใบสั่งซื้อ ฿{Number(po.po_total ?? 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                {po.paid_at && ` · จ่ายเงินเมื่อ ${new Date(po.paid_at).toLocaleString("th-TH")}`}
+              </p>
+            )}
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b text-left text-gray-400">

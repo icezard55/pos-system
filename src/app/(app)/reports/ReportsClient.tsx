@@ -47,12 +47,38 @@ interface OutOfStockRow {
   last_restocked_at: string | null;
 }
 
+interface AccountsPayableRow {
+  id: string;
+  supplier_name: string;
+  received_at: string;
+  po_total: number;
+  payment_status: "unpaid" | "pending_transfer" | "paid";
+  note: string | null;
+}
+
 function oneName(v: { name: string; unit?: string } | { name: string; unit?: string }[] | null): string {
   if (!v) return "-";
   return Array.isArray(v) ? v[0]?.name ?? "-" : v.name;
 }
 
-type Tab = "sales" | "receiving" | "stock_cost" | "out_of_stock";
+const payableStatusLabel: Record<AccountsPayableRow["payment_status"], string> = {
+  unpaid: "ยังไม่จ่าย",
+  pending_transfer: "รอโอน",
+  paid: "จ่ายแล้ว",
+};
+
+const payableStatusBadgeClass: Record<AccountsPayableRow["payment_status"], string> = {
+  unpaid: "bg-red-100 text-red-700",
+  pending_transfer: "bg-yellow-100 text-yellow-700",
+  paid: "bg-green-100 text-green-700",
+};
+
+function daysOutstanding(receivedAt: string): number {
+  const ms = Date.now() - new Date(receivedAt).getTime();
+  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+}
+
+type Tab = "sales" | "receiving" | "stock_cost" | "out_of_stock" | "payable";
 
 export default function ReportsClient({
   grandTotal,
@@ -65,6 +91,7 @@ export default function ReportsClient({
   receivedPOs,
   stockValuation,
   outOfStock,
+  accountsPayable,
 }: {
   grandTotal: number;
   grandProfit: number;
@@ -76,6 +103,7 @@ export default function ReportsClient({
   receivedPOs: ReceivedPO[];
   stockValuation: StockValuationRow[];
   outOfStock: OutOfStockRow[];
+  accountsPayable: AccountsPayableRow[];
 }) {
   const router = useRouter();
   const [start, setStart] = useState(startDate);
@@ -91,6 +119,7 @@ export default function ReportsClient({
     0
   );
   const stockValueTotal = stockValuation.reduce((s, p) => s + Number(p.stock_qty) * Number(p.cost_price), 0);
+  const payableTotal = accountsPayable.reduce((s, po) => s + Number(po.po_total), 0);
 
   function handleExport() {
     const wb = XLSX.utils.book_new();
@@ -104,6 +133,7 @@ export default function ReportsClient({
       { รายการ: "มูลค่าสินค้ารับเข้าในช่วงนี้", จำนวนเงิน: Number(receivingTotal.toFixed(2)) },
       { รายการ: "มูลค่าสต๊อกคงเหลือปัจจุบัน (ราคาทุน)", จำนวนเงิน: Number(stockValueTotal.toFixed(2)) },
       { รายการ: "จำนวนสินค้าหมดสต๊อกตอนนี้", จำนวนเงิน: outOfStock.length },
+      { รายการ: "เจ้าหนี้การค้าคงค้าง (ยังไม่จ่าย+รอโอน)", จำนวนเงิน: Number(payableTotal.toFixed(2)) },
     ]);
     XLSX.utils.book_append_sheet(wb, summarySheet, "สรุป");
 
@@ -171,6 +201,18 @@ export default function ReportsClient({
     );
     XLSX.utils.book_append_sheet(wb, oosSheet, "สินค้าหมดสต๊อก");
 
+    const payableSheet = XLSX.utils.json_to_sheet(
+      accountsPayable.map((po) => ({
+        ผู้จัดจำหน่าย: po.supplier_name,
+        วันที่รับเข้า: new Date(po.received_at).toLocaleString("th-TH"),
+        มูลค่า: Number(Number(po.po_total).toFixed(2)),
+        สถานะ: payableStatusLabel[po.payment_status],
+        ค้างมาแล้ว_วัน: daysOutstanding(po.received_at),
+        หมายเหตุ: po.note ?? "",
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, payableSheet, "เจ้าหนี้การค้า");
+
     XLSX.writeFile(wb, `รายงาน_${startDate}_ถึง_${endDate}.xlsx`);
   }
 
@@ -179,6 +221,7 @@ export default function ReportsClient({
     { key: "receiving", label: "การรับสินค้า" },
     { key: "stock_cost", label: "ต้นทุนสต๊อก" },
     { key: "out_of_stock", label: `สินค้าหมดสต๊อก (${outOfStock.length})` },
+    { key: "payable", label: `เจ้าหนี้การค้า (${accountsPayable.length})` },
   ];
 
   return (
@@ -373,6 +416,47 @@ export default function ReportsClient({
               {outOfStock.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-gray-400">ไม่มีสินค้าหมดสต๊อกในขณะนี้ 🎉</td></tr>}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {tab === "payable" && (
+        <div className="rounded-2xl bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold">เจ้าหนี้การค้าคงค้าง (ยังไม่จ่าย + รอโอน)</h2>
+            <p className="text-sm text-gray-500">
+              รวมทั้งหมด <span className="font-bold text-red-600">฿{payableTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+            </p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-gray-500">
+                <th className="py-2">ผู้จัดจำหน่าย</th>
+                <th className="py-2">วันที่รับเข้า</th>
+                <th className="py-2 text-right">ค้างมาแล้ว</th>
+                <th className="py-2 text-right">มูลค่า</th>
+                <th className="py-2 text-center">สถานะ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accountsPayable.map((po) => (
+                <tr key={po.id} className="border-b last:border-0">
+                  <td className="py-2">{po.supplier_name}</td>
+                  <td className="py-2 text-gray-500">{new Date(po.received_at).toLocaleDateString("th-TH")}</td>
+                  <td className="py-2 text-right text-gray-500">{daysOutstanding(po.received_at)} วัน</td>
+                  <td className="py-2 text-right font-medium">฿{Number(po.po_total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                  <td className="py-2 text-center">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${payableStatusBadgeClass[po.payment_status]}`}>
+                      {payableStatusLabel[po.payment_status]}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {accountsPayable.length === 0 && <tr><td colSpan={5} className="py-6 text-center text-gray-400">ไม่มีเจ้าหนี้การค้าคงค้าง 🎉</td></tr>}
+            </tbody>
+          </table>
+          <p className="mt-3 text-xs text-gray-400">
+            ไปที่เมนู "ใบสั่งซื้อ" เพื่ออัปเดตสถานะการจ่ายเงินของแต่ละใบ
+          </p>
         </div>
       )}
     </div>

@@ -84,6 +84,8 @@ export interface Supplier {
   created_at: string;
 }
 
+export type POPaymentStatus = "unpaid" | "pending_transfer" | "paid";
+
 export interface PurchaseOrder {
   id: string;
   supplier_id: string | null;
@@ -93,6 +95,9 @@ export interface PurchaseOrder {
   created_at: string;
   received_by: string | null;
   received_at: string | null;
+  payment_status: POPaymentStatus;
+  paid_at: string | null;
+  po_total: number | null;
 }
 
 export interface PurchaseOrderItem {

@@ -37,10 +37,33 @@ export default async function ReportsPage({
     .lte("sales.created_at", endDate.toISOString())
     .eq("sales.status", "completed");
 
-  const byDay: Record<string, number> = {};
+  const { data: receivedPOs } = await supabase
+    .from("purchase_orders")
+    .select("id, received_at, note, suppliers(name), purchase_order_items(qty, unit_cost, products(name, unit))")
+    .eq("status", "received")
+    .gte("received_at", startDate.toISOString())
+    .lte("received_at", endDate.toISOString())
+    .order("received_at", { ascending: false });
+
+  const { data: stockValuation } = await supabase
+    .from("products")
+    .select("id, name, sku, unit, stock_qty, cost_price, sell_price")
+    .eq("is_active", true)
+    .order("name");
+
+  const { data: outOfStock } = await supabase.rpc("report_out_of_stock");
+
+  const byDay: Record<string, { total: number; profit: number }> = {};
   (sales ?? []).forEach((s) => {
     const day = new Date(s.created_at).toLocaleDateString("th-TH");
-    byDay[day] = (byDay[day] ?? 0) + Number(s.total);
+    if (!byDay[day]) byDay[day] = { total: 0, profit: 0 };
+    byDay[day].total += Number(s.total);
+  });
+  (items ?? []).forEach((it: any) => {
+    const day = new Date(it.sales.created_at).toLocaleDateString("th-TH");
+    if (!byDay[day]) byDay[day] = { total: 0, profit: 0 };
+    const lineCost = Number(it.cost_price) * Number(it.qty);
+    byDay[day].profit += Number(it.line_total) - lineCost;
   });
   const dayRows = Object.entries(byDay).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 
@@ -71,6 +94,9 @@ export default async function ReportsPage({
       sales={sales ?? []}
       startDate={toISODate(startDate)}
       endDate={toISODate(endDate)}
+      receivedPOs={(receivedPOs as any) ?? []}
+      stockValuation={stockValuation ?? []}
+      outOfStock={outOfStock ?? []}
     />
   );
 }

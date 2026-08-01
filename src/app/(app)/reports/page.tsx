@@ -54,6 +54,13 @@ export default async function ReportsPage({
   const { data: outOfStock } = await supabase.rpc("report_out_of_stock");
   const { data: accountsPayable } = await supabase.rpc("report_accounts_payable");
 
+  const { data: expenses } = await supabase
+    .from("expenses")
+    .select("*")
+    .gte("expense_date", toISODate(startDate))
+    .lte("expense_date", toISODate(endDate))
+    .order("expense_date", { ascending: false });
+
   const byDay: Record<string, { total: number; profit: number }> = {};
   (sales ?? []).forEach((s) => {
     const day = new Date(s.created_at).toLocaleDateString("th-TH");
@@ -99,6 +106,7 @@ export default async function ReportsPage({
       stockValuation={stockValuation ?? []}
       outOfStock={outOfStock ?? []}
       accountsPayable={accountsPayable ?? []}
+      expenses={(expenses as any) ?? []}
     />
   );
 }

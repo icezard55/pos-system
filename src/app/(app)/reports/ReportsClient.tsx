@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { splitVat } from "@/lib/types";
+import { splitVat, EXPENSE_CATEGORY_LABEL, type Expense, type ExpenseCategory } from "@/lib/types";
 
 interface SaleRow {
   sale_no: string;
@@ -79,7 +79,7 @@ function daysOutstanding(receivedAt: string): number {
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
 }
 
-type Tab = "sales" | "receiving" | "stock_cost" | "out_of_stock" | "payable";
+type Tab = "sales" | "receiving" | "stock_cost" | "out_of_stock" | "payable" | "expenses";
 
 export default function ReportsClient({
   grandTotal,
@@ -93,6 +93,7 @@ export default function ReportsClient({
   stockValuation,
   outOfStock,
   accountsPayable,
+  expenses,
 }: {
   grandTotal: number;
   grandProfit: number;
@@ -105,6 +106,7 @@ export default function ReportsClient({
   stockValuation: StockValuationRow[];
   outOfStock: OutOfStockRow[];
   accountsPayable: AccountsPayableRow[];
+  expenses: Expense[];
 }) {
   const router = useRouter();
   const [start, setStart] = useState(startDate);
@@ -121,6 +123,12 @@ export default function ReportsClient({
   );
   const stockValueTotal = stockValuation.reduce((s, p) => s + Number(p.stock_qty) * Number(p.cost_price), 0);
   const payableTotal = accountsPayable.reduce((s, po) => s + Number(po.po_total), 0);
+  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const netProfit = grandProfit - totalExpenses;
+  const expensesByCategory = expenses.reduce((acc, e) => {
+    acc[e.category] = (acc[e.category] ?? 0) + Number(e.amount);
+    return acc;
+  }, {} as Record<ExpenseCategory, number>);
 
   function handleExport() {
     const wb = XLSX.utils.book_new();
@@ -131,6 +139,8 @@ export default function ReportsClient({
       { รายการ: "มูลค่าไม่รวม VAT", จำนวนเงิน: Number(summaryVat.base.toFixed(2)) },
       { รายการ: "VAT 7%", จำนวนเงิน: Number(summaryVat.vat.toFixed(2)) },
       { รายการ: "กำไรขั้นต้นโดยประมาณ", จำนวนเงิน: Number(grandProfit.toFixed(2)) },
+      { รายการ: "รายจ่ายทั้งหมดในช่วงนี้", จำนวนเงิน: Number(totalExpenses.toFixed(2)) },
+      { รายการ: "กำไรสุทธิโดยประมาณ", จำนวนเงิน: Number(netProfit.toFixed(2)) },
       { รายการ: "มูลค่าสินค้ารับเข้าในช่วงนี้", จำนวนเงิน: Number(receivingTotal.toFixed(2)) },
       { รายการ: "มูลค่าสต๊อกคงเหลือปัจจุบัน (ราคาทุน)", จำนวนเงิน: Number(stockValueTotal.toFixed(2)) },
       { รายการ: "จำนวนสินค้าหมดสต๊อกตอนนี้", จำนวนเงิน: outOfStock.length },
@@ -215,6 +225,17 @@ export default function ReportsClient({
     );
     XLSX.utils.book_append_sheet(wb, payableSheet, "เจ้าหนี้การค้า");
 
+    const expensesSheet = XLSX.utils.json_to_sheet(
+      expenses.map((e) => ({
+        วันที่: new Date(e.expense_date).toLocaleDateString("th-TH"),
+        หมวดหมู่: EXPENSE_CATEGORY_LABEL[e.category],
+        จำนวนเงิน: Number(Number(e.amount).toFixed(2)),
+        ที่มา: e.source === "manual" ? "บันทึกเอง" : e.source === "po_freight" ? "ค่าขนส่ง (ใบสั่งซื้อ)" : "รายการประจำ",
+        หมายเหตุ: e.note ?? "",
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, expensesSheet, "รายจ่าย");
+
     XLSX.writeFile(wb, `รายงาน_${startDate}_ถึง_${endDate}.xlsx`);
   }
 
@@ -224,6 +245,7 @@ export default function ReportsClient({
     { key: "stock_cost", label: "ต้นทุนสต๊อก" },
     { key: "out_of_stock", label: `สินค้าหมดสต๊อก (${outOfStock.length})` },
     { key: "payable", label: `เจ้าหนี้การค้า (${accountsPayable.length})` },
+    { key: "expenses", label: "รายจ่าย" },
   ];
 
   return (
@@ -252,7 +274,7 @@ export default function ReportsClient({
         ))}
       </div>
 
-      {(tab === "sales" || tab === "receiving") && (
+      {(tab === "sales" || tab === "receiving" || tab === "expenses") && (
         <div className="mb-6 flex flex-wrap items-end gap-2 rounded-2xl bg-white p-4 shadow-sm">
           <div>
             <label className="mb-1 block text-xs text-gray-600">จากวันที่</label>
@@ -268,7 +290,7 @@ export default function ReportsClient({
 
       {tab === "sales" && (
         <>
-          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-2xl bg-white p-6 shadow-sm">
               <p className="text-sm text-gray-500">ยอดขายรวม ({startDate} ถึง {endDate})</p>
               <p className="mt-1 text-3xl font-bold text-brand">฿{grandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
@@ -276,6 +298,16 @@ export default function ReportsClient({
             <div className="rounded-2xl bg-white p-6 shadow-sm">
               <p className="text-sm text-gray-500">กำไรขั้นต้นโดยประมาณ</p>
               <p className="mt-1 text-3xl font-bold text-green-600">฿{grandProfit.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="rounded-2xl bg-white p-6 shadow-sm">
+              <p className="text-sm text-gray-500">รายจ่ายทั้งหมด</p>
+              <p className="mt-1 text-3xl font-bold text-red-600">฿{totalExpenses.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="rounded-2xl bg-white p-6 shadow-sm">
+              <p className="text-sm text-gray-500">กำไรสุทธิโดยประมาณ</p>
+              <p className={`mt-1 text-3xl font-bold ${netProfit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                ฿{netProfit.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+              </p>
             </div>
           </div>
 
@@ -461,6 +493,66 @@ export default function ReportsClient({
           <p className="mt-3 text-xs text-gray-400">
             ไปที่เมนู "ใบสั่งซื้อ" เพื่ออัปเดตสถานะการจ่ายเงินของแต่ละใบ
           </p>
+        </div>
+      )}
+
+      {tab === "expenses" && (
+        <div className="space-y-6">
+          <div className="rounded-2xl bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-semibold">รายจ่ายแยกตามหมวดหมู่ ({startDate} ถึง {endDate})</h2>
+              <p className="text-sm text-gray-500">
+                รวมทั้งหมด <span className="font-bold text-red-600">฿{totalExpenses.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+              </p>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-gray-500">
+                  <th className="py-2">หมวดหมู่</th>
+                  <th className="py-2 text-right">จำนวนเงิน</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(Object.entries(expensesByCategory) as [ExpenseCategory, number][])
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([cat, amt]) => (
+                    <tr key={cat} className="border-b last:border-0">
+                      <td className="py-2">{EXPENSE_CATEGORY_LABEL[cat]}</td>
+                      <td className="py-2 text-right font-medium">฿{amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                  ))}
+                {expenses.length === 0 && <tr><td colSpan={2} className="py-6 text-center text-gray-400">ไม่มีรายจ่ายในช่วงนี้</td></tr>}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded-2xl bg-white p-6 shadow-sm">
+            <h2 className="mb-4 font-semibold">รายการรายจ่ายทั้งหมด</h2>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-gray-500">
+                  <th className="py-2">วันที่</th>
+                  <th className="py-2">หมวดหมู่</th>
+                  <th className="py-2 text-right">จำนวนเงิน</th>
+                  <th className="py-2">หมายเหตุ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenses.map((e) => (
+                  <tr key={e.id} className="border-b last:border-0">
+                    <td className="py-2 text-gray-500">{new Date(e.expense_date).toLocaleDateString("th-TH")}</td>
+                    <td className="py-2">{EXPENSE_CATEGORY_LABEL[e.category]}</td>
+                    <td className="py-2 text-right font-medium">฿{Number(e.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 text-gray-500">{e.note ?? "-"}</td>
+                  </tr>
+                ))}
+                {expenses.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-gray-400">ไม่มีรายจ่ายในช่วงนี้</td></tr>}
+              </tbody>
+            </table>
+            <p className="mt-3 text-xs text-gray-400">
+              ไปที่เมนู "รายจ่าย" เพื่อบันทึกรายจ่ายใหม่หรือตั้งรายการประจำ
+            </p>
+          </div>
         </div>
       )}
     </div>

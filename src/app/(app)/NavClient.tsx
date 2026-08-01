@@ -13,6 +13,7 @@ const links = [
   { href: "/stock-adjustments", label: "ปรับสต๊อก", icon: "🛠️", roles: ["admin"] },
   { href: "/purchase-orders", label: "ใบสั่งซื้อ", icon: "📥", roles: ["admin"] },
   { href: "/suppliers", label: "ผู้จัดจำหน่าย", icon: "🚚", roles: ["admin"] },
+  { href: "/expenses", label: "รายจ่าย", icon: "💸", roles: ["admin"] },
   { href: "/reports", label: "รายงาน", icon: "📈", roles: ["admin"] },
   { href: "/users", label: "จัดการผู้ใช้", icon: "👥", roles: ["admin"] },
   { href: "/audit-log", label: "ประวัติการดำเนินการ", icon: "🔍", roles: ["admin"] },

@@ -99,6 +99,7 @@ export interface PurchaseOrder {
   paid_at: string | null;
   po_total: number | null;
   supplier_invoice_no: string | null;
+  freight_cost: number;
 }
 
 export interface PurchaseOrderItem {
@@ -107,6 +108,72 @@ export interface PurchaseOrderItem {
   product_id: string;
   qty: number;
   unit_cost: number;
+}
+
+export type ExpenseCategory =
+  | "water"
+  | "electricity"
+  | "salary"
+  | "tax"
+  | "fee"
+  | "transport"
+  | "investment"
+  | "damaged_goods"
+  | "shipping"
+  | "other";
+
+export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping">;
+
+export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
+  water: "ค่าน้ำ",
+  electricity: "ค่าไฟ",
+  salary: "เงินเดือน",
+  tax: "ภาษี",
+  fee: "ค่าธรรมเนียม",
+  transport: "ค่าเดินทาง",
+  investment: "เงินลงทุน/ออม",
+  damaged_goods: "สินค้าเสียหาย",
+  shipping: "ค่าขนส่ง (รับสินค้าเข้า)",
+  other: "อื่นๆ",
+};
+
+export const RECURRING_EXPENSE_CATEGORIES: RecurringExpenseCategory[] = [
+  "water",
+  "electricity",
+  "salary",
+  "tax",
+  "fee",
+  "transport",
+  "investment",
+  "damaged_goods",
+  "other",
+];
+
+export type ExpenseSource = "manual" | "po_freight" | "recurring";
+
+export interface Expense {
+  id: string;
+  category: ExpenseCategory;
+  amount: number;
+  expense_date: string;
+  note: string | null;
+  source: ExpenseSource;
+  po_id: string | null;
+  recurring_id: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface RecurringExpense {
+  id: string;
+  category: RecurringExpenseCategory;
+  amount: number;
+  day_of_month: number;
+  note: string | null;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  last_generated_month: string | null;
 }
 
 export interface ShopSettings {

@@ -37,6 +37,7 @@ interface PO {
   paid_at: string | null;
   po_total: number | null;
   supplier_invoice_no: string | null;
+  freight_cost: number;
   suppliers: { name: string } | { name: string }[] | null;
   purchase_order_items: POItem[];
 }
@@ -142,6 +143,7 @@ export default function PurchaseOrdersClient({
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [note, setNote] = useState("");
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
+  const [freightCost, setFreightCost] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([{ productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
   const [busy, setBusy] = useState(false);
   const [receivingId, setReceivingId] = useState<string | null>(null);
@@ -180,11 +182,13 @@ export default function PurchaseOrdersClient({
         p_items: items,
         p_note: note || null,
         p_supplier_invoice_no: supplierInvoiceNo || null,
+        p_freight_cost: Number(freightCost) || 0,
       });
       if (error) throw error;
       setLines([{ productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
       setNote("");
       setSupplierInvoiceNo("");
+      setFreightCost("");
       setShowCreate(false);
       router.refresh();
     } catch (err: any) {
@@ -276,6 +280,19 @@ export default function PurchaseOrdersClient({
                 placeholder="เช่น INV-2026-0001"
                 className="w-full rounded-lg border px-3 py-2 text-sm"
               />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">ค่าขนส่ง (ถ้ามี)</label>
+              <input
+                type="number" min={0} step="0.01"
+                value={freightCost}
+                onChange={(e) => setFreightCost(e.target.value)}
+                placeholder="0.00"
+                className="w-full rounded-lg border px-3 py-2 text-sm"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                จะถูกบันทึกเป็นรายจ่ายอัตโนมัติในหมวด "ค่าขนส่ง" เมื่อรับสินค้าเข้า (ไม่รวมในยอดเจ้าหนี้การค้า)
+              </p>
             </div>
           </div>
 
@@ -374,8 +391,12 @@ export default function PurchaseOrdersClient({
             {po.status === "received" && (
               <p className="mb-2 text-xs text-gray-400">
                 มูลค่าใบสั่งซื้อ ฿{Number(po.po_total ?? 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                {Number(po.freight_cost) > 0 && ` + ค่าขนส่ง ฿${Number(po.freight_cost).toLocaleString("th-TH", { minimumFractionDigits: 2 })}`}
                 {po.paid_at && ` · จ่ายเงินเมื่อ ${new Date(po.paid_at).toLocaleString("th-TH")}`}
               </p>
+            )}
+            {po.status === "draft" && Number(po.freight_cost) > 0 && (
+              <p className="mb-2 text-xs text-gray-400">ค่าขนส่งที่ตั้งไว้ ฿{Number(po.freight_cost).toLocaleString("th-TH", { minimumFractionDigits: 2 })} (จะบันทึกเป็นรายจ่ายเมื่อรับสินค้าเข้า)</p>
             )}
             <table className="w-full text-xs">
               <thead>

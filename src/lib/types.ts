@@ -120,6 +120,9 @@ export type ExpenseCategory =
   | "investment"
   | "damaged_goods"
   | "shipping"
+  | "travel"
+  | "main_food"
+  | "dessert"
   | "other";
 
 export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping">;
@@ -134,6 +137,9 @@ export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   investment: "เงินลงทุน/ออม",
   damaged_goods: "สินค้าเสียหาย",
   shipping: "ค่าขนส่ง (รับสินค้าเข้า)",
+  travel: "ท่องเที่ยว",
+  main_food: "อาหารหลัก",
+  dessert: "ของหวาน",
   other: "อื่นๆ",
 };
 
@@ -146,6 +152,9 @@ export const RECURRING_EXPENSE_CATEGORIES: RecurringExpenseCategory[] = [
   "transport",
   "investment",
   "damaged_goods",
+  "travel",
+  "main_food",
+  "dessert",
   "other",
 ];
 

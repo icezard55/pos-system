@@ -15,7 +15,7 @@ import {
 const sourceLabel: Record<Expense["source"], string> = {
   manual: "บันทึกเอง",
   po_freight: "ค่าขนส่ง (ใบสั่งซื้อ)",
-  recurring: "รายการประจำ (อัตโนมัติ)",
+  recurring: "รายการประจำ",
 };
 
 const sourceBadgeClass: Record<Expense["source"], string> = {
@@ -133,53 +133,21 @@ export default function ExpensesClient({
     setBusyRecurring(true);
     setError(null);
     try {
-      const day = Number(rDay);
-      const now = new Date();
-
-      // หาเดือนที่ตรงกับที่เลือกไว้ทั้งหมดในอีก 12 เดือนข้างหน้า (ครอบคลุมรายจ่ายที่เกิดปีละ 1-2 ครั้ง) แล้วบันทึกทันที
-      const occurrences: Date[] = [];
-      for (let i = 0; i < 12; i++) {
-        const d = new Date(now.getFullYear(), now.getMonth() + i, day);
-        if (rMonths.includes(d.getMonth() + 1)) occurrences.push(d);
-      }
-
-      const lastOccurrence = occurrences[occurrences.length - 1];
-      const lastGeneratedMonth = toLocalISODate(new Date(lastOccurrence.getFullYear(), lastOccurrence.getMonth(), 1));
-
+      // บันทึกไว้เป็นแค่ตัวเตือนรายการประจำ ไม่มีการสร้างรายจ่ายให้อัตโนมัติ ต้องกด "บันทึกเป็นรายจ่าย" เองทุกครั้งที่ถึงกำหนดจ่ายจริง
       const { data, error } = await supabase
         .from("recurring_expenses")
         .insert({
           category: rCategory,
           amount: Number(rAmount),
-          day_of_month: day,
+          day_of_month: Number(rDay),
           months: rMonths,
           note: rNote || null,
-          last_generated_month: lastGeneratedMonth,
         })
         .select()
         .single();
       if (error) throw error;
 
-      // บันทึกรายจ่ายทุกงวดที่ตรงเดือนที่เลือกไว้ล่วงหน้าทันที ไม่ต้องรอถึงวันที่กำหนดหรือรอบเดินของระบบ
-      const expenseRows = occurrences.map((d) => ({
-        category: rCategory,
-        amount: Number(rAmount),
-        expense_date: toLocalISODate(d),
-        note: rNote || null,
-        source: "recurring" as const,
-        recurring_id: data.id,
-      }));
-
-      const { data: insertedExpenses, error: expenseError } = await supabase
-        .from("expenses")
-        .insert(expenseRows)
-        .select();
-      if (expenseError) throw expenseError;
-
       setRecurring((prev) => [...prev, data].sort((a, b) => a.day_of_month - b.day_of_month));
-      setExpenses((prev) =>
-        [...(insertedExpenses ?? []), ...prev].sort((a, b) => (a.expense_date < b.expense_date ? 1 : -1))
-      );
       setRAmount("");
       setRNote("");
       setRDay("1");
@@ -190,6 +158,30 @@ export default function ExpensesClient({
       setError(err.message ?? "เพิ่มรายการประจำไม่สำเร็จ");
     } finally {
       setBusyRecurring(false);
+    }
+  }
+
+  async function handleRecordNow(rec: RecurringExpense) {
+    if (!confirm(`บันทึกเป็นรายจ่ายวันนี้ ${EXPENSE_CATEGORY_LABEL[rec.category]} ฿${Number(rec.amount).toLocaleString("th-TH")}?`)) return;
+    setError(null);
+    try {
+      const { data, error } = await supabase
+        .from("expenses")
+        .insert({
+          category: rec.category,
+          amount: rec.amount,
+          expense_date: toLocalISODate(new Date()),
+          note: rec.note,
+          source: "recurring",
+          recurring_id: rec.id,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setExpenses((prev) => [data, ...prev]);
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? "บันทึกรายจ่ายไม่สำเร็จ");
     }
   }
 
@@ -244,7 +236,7 @@ export default function ExpensesClient({
 
       <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-800">รายการประจำ (เลือกเดือนที่จ่ายจริง + บันทึกล่วงหน้าอัตโนมัติ)</h2>
+          <h2 className="font-semibold text-gray-800">รายการประจำ (ตัวเตือน ไม่บันทึกอัตโนมัติ)</h2>
           <button
             onClick={() => setShowAddRecurring((v) => !v)}
             className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-dark"
@@ -294,7 +286,7 @@ export default function ExpensesClient({
               </div>
               <p className="mt-1 text-[11px] text-gray-400">
                 เลือกทุกเดือนถ้าจ่ายทุกเดือน (เช่น ค่าน้ำ ค่าไฟ) หรือเลือกเฉพาะเดือนที่จ่ายจริงถ้าจ่ายปีละ 1-2 ครั้ง (เช่น ค่าประกัน)
-                ระบบจะบันทึกทุกงวดที่ตรงเดือนในอีก 12 เดือนข้างหน้าให้ทันที เพื่อให้เตรียมเงินไว้ล่วงหน้าได้ และจะบันทึกอัตโนมัติต่อเนื่องทุกรอบปีถัดไป
+                รายการนี้จะเป็นแค่ตัวเตือน ไม่มีการสร้างรายจ่ายให้อัตโนมัติ ต้องกด "บันทึกวันนี้" ด้านล่างเองทุกครั้งที่ถึงกำหนดจ่ายจริง
               </p>
             </div>
 
@@ -336,7 +328,10 @@ export default function ExpensesClient({
                     </button>
                   </td>
                   <td className="py-2 text-right">
-                    <button onClick={() => handleDeleteRecurring(r.id)} className="text-red-500 hover:underline">ลบ</button>
+                    <div className="flex justify-end gap-3">
+                      <button onClick={() => handleRecordNow(r)} className="font-medium text-brand hover:underline">บันทึกวันนี้</button>
+                      <button onClick={() => handleDeleteRecurring(r.id)} className="text-red-500 hover:underline">ลบ</button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -31,6 +31,19 @@ function toLocalISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+// หาวันที่ครั้งถัดไปที่ตรงกับเดือนที่เลือกไว้ของรายการประจำนี้ (มองไปข้างหน้าได้ถึง 2 ปี) ใช้เป็นค่าเริ่มต้นตอนวางแผนล่วงหน้า
+function nextOccurrenceDate(rec: RecurringExpense, afterStr: string): string {
+  const now = new Date();
+  for (let i = 0; i < 24; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, rec.day_of_month);
+    if (rec.months.includes(d.getMonth() + 1)) {
+      const iso = toLocalISODate(d);
+      if (iso > afterStr) return iso;
+    }
+  }
+  return afterStr;
+}
+
 export default function ExpensesClient({
   initialExpenses,
   initialRecurring,
@@ -57,6 +70,10 @@ export default function ExpensesClient({
   const [rMonths, setRMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
   const [rNote, setRNote] = useState("");
   const [busyRecurring, setBusyRecurring] = useState(false);
+
+  const [planningId, setPlanningId] = useState<string | null>(null);
+  const [planningDate, setPlanningDate] = useState("");
+  const [busyPlanning, setBusyPlanning] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -182,6 +199,48 @@ export default function ExpensesClient({
       router.refresh();
     } catch (err: any) {
       setError(err.message ?? "บันทึกรายจ่ายไม่สำเร็จ");
+    }
+  }
+
+  function openPlanning(rec: RecurringExpense) {
+    setPlanningId(rec.id);
+    setPlanningDate(nextOccurrenceDate(rec, todayStr));
+    setError(null);
+  }
+
+  function closePlanning() {
+    setPlanningId(null);
+    setPlanningDate("");
+  }
+
+  async function handleSavePlanned(rec: RecurringExpense) {
+    if (!planningDate) {
+      setError("กรุณาเลือกวันที่ที่ต้องการวางแผน");
+      return;
+    }
+    setBusyPlanning(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase
+        .from("expenses")
+        .insert({
+          category: rec.category,
+          amount: rec.amount,
+          expense_date: planningDate,
+          note: rec.note,
+          source: "recurring",
+          recurring_id: rec.id,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      setExpenses((prev) => [...prev, data].sort((a, b) => (a.expense_date < b.expense_date ? 1 : -1)));
+      closePlanning();
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? "บันทึกแผนล่วงหน้าไม่สำเร็จ");
+    } finally {
+      setBusyPlanning(false);
     }
   }
 
@@ -311,29 +370,64 @@ export default function ExpensesClient({
             </thead>
             <tbody>
               {recurring.map((r) => (
-                <tr key={r.id} className="border-b last:border-0">
-                  <td className="py-2">{EXPENSE_CATEGORY_LABEL[r.category]}</td>
-                  <td className="py-2 text-right font-medium">฿{Number(r.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                  <td className="py-2 text-center text-gray-500">วันที่ {r.day_of_month}</td>
-                  <td className="py-2 text-gray-500">
-                    {r.months.length === 12 ? "ทุกเดือน" : r.months.map((m) => THAI_MONTH_ABBR[m - 1]).join(", ")}
-                  </td>
-                  <td className="py-2 text-gray-500">{r.note ?? "-"}</td>
-                  <td className="py-2 text-center">
-                    <button
-                      onClick={() => handleToggleRecurring(r)}
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
-                    >
-                      {r.active ? "ใช้งานอยู่" : "ปิดใช้งาน"}
-                    </button>
-                  </td>
-                  <td className="py-2 text-right">
-                    <div className="flex justify-end gap-3">
-                      <button onClick={() => handleRecordNow(r)} className="font-medium text-brand hover:underline">บันทึกวันนี้</button>
-                      <button onClick={() => handleDeleteRecurring(r.id)} className="text-red-500 hover:underline">ลบ</button>
-                    </div>
-                  </td>
-                </tr>
+                <Fragment key={r.id}>
+                  <tr className="border-b last:border-0">
+                    <td className="py-2">{EXPENSE_CATEGORY_LABEL[r.category]}</td>
+                    <td className="py-2 text-right font-medium">฿{Number(r.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 text-center text-gray-500">วันที่ {r.day_of_month}</td>
+                    <td className="py-2 text-gray-500">
+                      {r.months.length === 12 ? "ทุกเดือน" : r.months.map((m) => THAI_MONTH_ABBR[m - 1]).join(", ")}
+                    </td>
+                    <td className="py-2 text-gray-500">{r.note ?? "-"}</td>
+                    <td className="py-2 text-center">
+                      <button
+                        onClick={() => handleToggleRecurring(r)}
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}
+                      >
+                        {r.active ? "ใช้งานอยู่" : "ปิดใช้งาน"}
+                      </button>
+                    </td>
+                    <td className="py-2 text-right">
+                      <div className="flex flex-wrap justify-end gap-3">
+                        <button onClick={() => handleRecordNow(r)} className="font-medium text-brand hover:underline">บันทึกวันนี้</button>
+                        <button
+                          onClick={() => (planningId === r.id ? closePlanning() : openPlanning(r))}
+                          className="font-medium text-orange-600 hover:underline"
+                        >
+                          วางแผนล่วงหน้า
+                        </button>
+                        <button onClick={() => handleDeleteRecurring(r.id)} className="text-red-500 hover:underline">ลบ</button>
+                      </div>
+                    </td>
+                  </tr>
+                  {planningId === r.id && (
+                    <tr className="border-b bg-orange-50/60 last:border-0">
+                      <td colSpan={7} className="py-3">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <span className="text-xs text-gray-500">
+                            วางแผนบันทึกล่วงหน้า {EXPENSE_CATEGORY_LABEL[r.category]} ฿{Number(r.amount).toLocaleString("th-TH")} วันที่
+                          </span>
+                          <input
+                            type="date"
+                            value={planningDate}
+                            onChange={(e) => setPlanningDate(e.target.value)}
+                            className="rounded-lg border px-3 py-1.5 text-sm"
+                          />
+                          <button
+                            onClick={() => handleSavePlanned(r)}
+                            disabled={busyPlanning}
+                            className="rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-orange-700 disabled:opacity-60"
+                          >
+                            {busyPlanning ? "กำลังบันทึก..." : "บันทึกแผนล่วงหน้า"}
+                          </button>
+                          <button onClick={closePlanning} className="rounded-lg border px-3 py-1.5 text-xs hover:bg-gray-50">
+                            ยกเลิก
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
               {recurring.length === 0 && (
                 <tr><td colSpan={7} className="py-6 text-center text-gray-400">ยังไม่มีรายการประจำ</td></tr>

@@ -112,6 +112,9 @@ export default function ExpensesClient({
     setBusyRecurring(true);
     setError(null);
     try {
+      const today = new Date().toISOString().slice(0, 10);
+      const thisMonth = today.slice(0, 7) + "-01";
+
       const { data, error } = await supabase
         .from("recurring_expenses")
         .insert({
@@ -119,11 +122,29 @@ export default function ExpensesClient({
           amount: Number(rAmount),
           day_of_month: Number(rDay),
           note: rNote || null,
+          last_generated_month: thisMonth,
         })
         .select()
         .single();
       if (error) throw error;
+
+      // บันทึกรายจ่ายงวดแรกทันที ไม่ต้องรอถึงวันที่กำหนดหรือรอบเดินของระบบ
+      const { data: expenseRow, error: expenseError } = await supabase
+        .from("expenses")
+        .insert({
+          category: rCategory,
+          amount: Number(rAmount),
+          expense_date: today,
+          note: rNote || null,
+          source: "recurring",
+          recurring_id: data.id,
+        })
+        .select()
+        .single();
+      if (expenseError) throw expenseError;
+
       setRecurring((prev) => [...prev, data].sort((a, b) => a.day_of_month - b.day_of_month));
+      setExpenses((prev) => [expenseRow, ...prev]);
       setRAmount("");
       setRNote("");
       setRDay("1");
@@ -183,7 +204,7 @@ export default function ExpensesClient({
 
       <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-800">รายการประจำ (บันทึกอัตโนมัติทุกเดือน)</h2>
+          <h2 className="font-semibold text-gray-800">รายการประจำ (บันทึกทันที + อัตโนมัติทุกเดือนถัดไป)</h2>
           <button
             onClick={() => setShowAddRecurring((v) => !v)}
             className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-dark"
@@ -202,7 +223,7 @@ export default function ExpensesClient({
             <input type="number" min={0} step="0.01" placeholder="จำนวนเงิน" value={rAmount} onChange={(e) => setRAmount(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
             <div>
               <input type="number" min={1} max={28} placeholder="วันที่ของเดือน (1-28)" value={rDay} onChange={(e) => setRDay(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm" />
-              <p className="mt-1 text-[11px] text-gray-400">ระบบจะบันทึกอัตโนมัติทุกวันที่นี้ของเดือน</p>
+              <p className="mt-1 text-[11px] text-gray-400">บันทึกงวดแรกให้ทันทีที่กดบันทึก ส่วนเดือนถัดๆไปจะบันทึกอัตโนมัติทุกวันที่นี้</p>
             </div>
             <input placeholder="หมายเหตุ" value={rNote} onChange={(e) => setRNote(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
             <button type="submit" disabled={busyRecurring} className="sm:col-span-4 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60">

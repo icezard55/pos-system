@@ -178,12 +178,18 @@ export interface RecurringExpense {
   category: RecurringExpenseCategory;
   amount: number;
   day_of_month: number;
+  months: number[];
   note: string | null;
   active: boolean;
   created_by: string | null;
   created_at: string;
   last_generated_month: string | null;
 }
+
+export const THAI_MONTH_ABBR = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+];
 
 export interface ShopSettings {
   id: boolean;

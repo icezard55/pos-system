@@ -23,6 +23,13 @@ const sourceBadgeClass: Record<Expense["source"], string> = {
   recurring: "bg-purple-100 text-purple-700",
 };
 
+function toLocalISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function ExpensesClient({
   initialExpenses,
   initialRecurring,
@@ -38,7 +45,7 @@ export default function ExpensesClient({
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory>("water");
   const [amount, setAmount] = useState("");
-  const [expenseDate, setExpenseDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [expenseDate, setExpenseDate] = useState(() => toLocalISODate(new Date()));
   const [note, setNote] = useState("");
   const [busyExpense, setBusyExpense] = useState(false);
 
@@ -46,15 +53,20 @@ export default function ExpensesClient({
   const [rCategory, setRCategory] = useState<RecurringExpenseCategory>("water");
   const [rAmount, setRAmount] = useState("");
   const [rDay, setRDay] = useState("1");
+  const [rMonthsAhead, setRMonthsAhead] = useState("1");
   const [rNote, setRNote] = useState("");
   const [busyRecurring, setBusyRecurring] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
+  const todayStr = toLocalISODate(new Date());
   const totalLoaded = expenses.reduce((s, e) => s + Number(e.amount), 0);
-  const thisMonthKey = new Date().toISOString().slice(0, 7);
+  const thisMonthKey = todayStr.slice(0, 7);
   const totalThisMonth = expenses
     .filter((e) => e.expense_date.slice(0, 7) === thisMonthKey)
+    .reduce((s, e) => s + Number(e.amount), 0);
+  const totalUpcoming = expenses
+    .filter((e) => e.expense_date > todayStr)
     .reduce((s, e) => s + Number(e.amount), 0);
 
   async function handleAddExpense(e: React.FormEvent) {
@@ -112,42 +124,51 @@ export default function ExpensesClient({
     setBusyRecurring(true);
     setError(null);
     try {
-      const today = new Date().toISOString().slice(0, 10);
-      const thisMonth = today.slice(0, 7) + "-01";
+      const day = Number(rDay);
+      const monthsAhead = Math.min(6, Math.max(1, Number(rMonthsAhead) || 1));
+      const now = new Date();
+
+      // เดือนสุดท้ายที่จะบันทึกไว้ล่วงหน้า ใช้กันไม่ให้ระบบบันทึกซ้ำอีกครั้งตอนถึงรอบอัตโนมัติ
+      const lastMonthDate = new Date(now.getFullYear(), now.getMonth() + monthsAhead - 1, 1);
+      const lastGeneratedMonth = toLocalISODate(lastMonthDate);
 
       const { data, error } = await supabase
         .from("recurring_expenses")
         .insert({
           category: rCategory,
           amount: Number(rAmount),
-          day_of_month: Number(rDay),
+          day_of_month: day,
           note: rNote || null,
-          last_generated_month: thisMonth,
+          last_generated_month: lastGeneratedMonth,
         })
         .select()
         .single();
       if (error) throw error;
 
-      // บันทึกรายจ่ายงวดแรกทันที ไม่ต้องรอถึงวันที่กำหนดหรือรอบเดินของระบบ
-      const { data: expenseRow, error: expenseError } = await supabase
+      // บันทึกรายจ่ายล่วงหน้าตามจำนวนเดือนที่เลือกทันที ไม่ต้องรอถึงวันที่กำหนดหรือรอบเดินของระบบ
+      const expenseRows = Array.from({ length: monthsAhead }, (_, i) => ({
+        category: rCategory,
+        amount: Number(rAmount),
+        expense_date: toLocalISODate(new Date(now.getFullYear(), now.getMonth() + i, day)),
+        note: rNote || null,
+        source: "recurring" as const,
+        recurring_id: data.id,
+      }));
+
+      const { data: insertedExpenses, error: expenseError } = await supabase
         .from("expenses")
-        .insert({
-          category: rCategory,
-          amount: Number(rAmount),
-          expense_date: today,
-          note: rNote || null,
-          source: "recurring",
-          recurring_id: data.id,
-        })
-        .select()
-        .single();
+        .insert(expenseRows)
+        .select();
       if (expenseError) throw expenseError;
 
       setRecurring((prev) => [...prev, data].sort((a, b) => a.day_of_month - b.day_of_month));
-      setExpenses((prev) => [expenseRow, ...prev]);
+      setExpenses((prev) =>
+        [...(insertedExpenses ?? []), ...prev].sort((a, b) => (a.expense_date < b.expense_date ? 1 : -1))
+      );
       setRAmount("");
       setRNote("");
       setRDay("1");
+      setRMonthsAhead("1");
       setShowAddRecurring(false);
       router.refresh();
     } catch (err: any) {
@@ -191,10 +212,14 @@ export default function ExpensesClient({
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <p className="text-sm text-gray-500">รายจ่ายเดือนนี้</p>
           <p className="mt-1 text-2xl font-bold text-red-600">฿{totalThisMonth.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+        </div>
+        <div className="rounded-2xl bg-white p-5 shadow-sm">
+          <p className="text-sm text-gray-500">วางแผนล่วงหน้า (ยังไม่ถึงกำหนด)</p>
+          <p className="mt-1 text-2xl font-bold text-orange-600">฿{totalUpcoming.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
         </div>
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <p className="text-sm text-gray-500">รวม {expenses.length} รายการล่าสุดที่แสดง</p>
@@ -214,19 +239,24 @@ export default function ExpensesClient({
         </div>
 
         {showAddRecurring && (
-          <form onSubmit={handleAddRecurring} className="mb-4 grid grid-cols-1 gap-2 rounded-xl border p-4 sm:grid-cols-4">
+          <form onSubmit={handleAddRecurring} className="mb-4 grid grid-cols-1 gap-2 rounded-xl border p-4 sm:grid-cols-5">
             <select value={rCategory} onChange={(e) => setRCategory(e.target.value as RecurringExpenseCategory)} className="rounded-lg border px-3 py-2 text-sm">
               {RECURRING_EXPENSE_CATEGORIES.map((c) => (
                 <option key={c} value={c}>{EXPENSE_CATEGORY_LABEL[c]}</option>
               ))}
             </select>
             <input type="number" min={0} step="0.01" placeholder="จำนวนเงิน" value={rAmount} onChange={(e) => setRAmount(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
+            <input type="number" min={1} max={28} placeholder="วันที่ของเดือน (1-28)" value={rDay} onChange={(e) => setRDay(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm" />
             <div>
-              <input type="number" min={1} max={28} placeholder="วันที่ของเดือน (1-28)" value={rDay} onChange={(e) => setRDay(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm" />
-              <p className="mt-1 text-[11px] text-gray-400">บันทึกงวดแรกให้ทันทีที่กดบันทึก ส่วนเดือนถัดๆไปจะบันทึกอัตโนมัติทุกวันที่นี้</p>
+              <select value={rMonthsAhead} onChange={(e) => setRMonthsAhead(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm">
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>บันทึกล่วงหน้า {n} เดือน</option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-gray-400">บันทึกงวดแรกๆทันที ตามจำนวนเดือนที่เลือก เดือนถัดไปหลังจากนั้นจะบันทึกอัตโนมัติทุกวันที่นี้</p>
             </div>
             <input placeholder="หมายเหตุ" value={rNote} onChange={(e) => setRNote(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
-            <button type="submit" disabled={busyRecurring} className="sm:col-span-4 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60">
+            <button type="submit" disabled={busyRecurring} className="sm:col-span-5 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60">
               {busyRecurring ? "กำลังบันทึก..." : "บันทึกรายการประจำ"}
             </button>
           </form>
@@ -315,16 +345,19 @@ export default function ExpensesClient({
             </thead>
             <tbody>
               {expenses.map((e) => (
-                <tr key={e.id} className="border-b last:border-0">
+                <tr key={e.id} className={`border-b last:border-0 ${e.expense_date > todayStr ? "bg-orange-50/50" : ""}`}>
                   <td className="py-2 text-gray-500">{new Date(e.expense_date).toLocaleDateString("th-TH")}</td>
                   <td className="py-2">{EXPENSE_CATEGORY_LABEL[e.category]}</td>
                   <td className="py-2 text-right font-medium">฿{Number(e.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                   <td className="py-2">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${sourceBadgeClass[e.source]}`}>{sourceLabel[e.source]}</span>
+                    {e.expense_date > todayStr && (
+                      <span className="ml-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">วางแผนล่วงหน้า</span>
+                    )}
                   </td>
                   <td className="py-2 text-gray-500">{e.note ?? "-"}</td>
                   <td className="py-2 text-right">
-                    {e.source === "manual" && (
+                    {e.source !== "po_freight" && (
                       <button onClick={() => handleDeleteExpense(e.id)} className="text-red-500 hover:underline">ลบ</button>
                     )}
                   </td>

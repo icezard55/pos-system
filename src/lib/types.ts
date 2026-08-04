@@ -47,6 +47,7 @@ export interface Sale {
   status: string;
   created_at: string;
   shift_id: string | null;
+  source: "pos" | "imported";
 }
 
 export interface SalePayment {

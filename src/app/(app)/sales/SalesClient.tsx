@@ -1,9 +1,45 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
 import type { Sale } from "@/lib/types";
+
+const SALE_HEADER_MAP: Record<string, string> = {
+  bill_no: "bill_no", "เลขที่บิล": "bill_no", "เลขบิล": "bill_no",
+  date: "date", "วันที่": "date",
+  sku: "sku", "รหัสสินค้า": "sku", "รหัส": "sku",
+  product_name: "product_name", "ชื่อสินค้า": "product_name",
+  qty: "qty", "จำนวน": "qty",
+  unit_price: "unit_price", "ราคาต่อหน่วย": "unit_price", "ราคา": "unit_price",
+  discount: "discount", "ส่วนลด": "discount",
+  payment_method: "payment_method", "ช่องทางชำระ": "payment_method", "ชำระโดย": "payment_method",
+  customer_name: "customer_name", "ชื่อลูกค้า": "customer_name",
+};
+
+const PAYMENT_METHOD_MAP: Record<string, string> = {
+  cash: "cash", เงินสด: "cash",
+  transfer: "transfer", โอน: "transfer", เงินโอน: "transfer",
+  card: "card", บัตร: "card", บัตรเครดิต: "card",
+  credit: "credit", เชื่อ: "credit",
+};
+
+interface ImportedItem {
+  sku: string;
+  product_name: string;
+  qty: number;
+  unit_price: number;
+  discount: number;
+}
+
+interface ImportedBillGroup {
+  bill_no: string;
+  date: string;
+  customer_name: string;
+  payment_method: string;
+  items: ImportedItem[];
+}
 
 export default function SalesClient({
   sales,
@@ -29,6 +65,10 @@ export default function SalesClient({
   const [voidTarget, setVoidTarget] = useState<Sale | null>(null);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [reauthError, setReauthError] = useState<string | null>(null);
+
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const filtered = sales.filter(
     (s) => s.sale_no.toLowerCase().includes(search.toLowerCase()) || (s.customer_name ?? "").toLowerCase().includes(search.toLowerCase())
@@ -72,6 +112,124 @@ export default function SalesClient({
     }
   }
 
+  function downloadSalesTemplate() {
+    const ws = XLSX.utils.json_to_sheet([
+      {
+        "เลขที่บิล": "OLD-0001",
+        "วันที่": "2026-01-15",
+        "รหัสสินค้า": "SKU001",
+        "ชื่อสินค้า": "ตัวอย่างสินค้า",
+        "จำนวน": 2,
+        "ราคาต่อหน่วย": 50,
+        "ส่วนลด": 0,
+        "ช่องทางชำระ": "เงินสด",
+        "ชื่อลูกค้า": "",
+      },
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "sales");
+    XLSX.writeFile(wb, "template_นำเข้าประวัติการขาย.xlsx");
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+      const rows = raw
+        .map((row) => {
+          const mapped: Record<string, any> = {};
+          for (const key of Object.keys(row)) {
+            const norm = SALE_HEADER_MAP[key.trim()] ?? SALE_HEADER_MAP[key.trim().toLowerCase()];
+            if (norm) mapped[norm] = row[key];
+          }
+          return mapped;
+        })
+        .filter((r) => (r.qty && Number(r.qty) > 0) && (String(r.sku ?? "").trim() || String(r.product_name ?? "").trim()));
+
+      if (rows.length === 0) {
+        setImportMsg("ไม่พบข้อมูลที่ใช้ได้ในไฟล์ กรุณาตรวจสอบหัวคอลัมน์ เช่น เลขที่บิล, รหัสสินค้า, จำนวน, ราคาต่อหน่วย");
+        return;
+      }
+
+      // จัดกลุ่มแถวตาม "เลขที่บิล" ให้เป็น 1 บิลขาย 1 รายการ ถ้าไม่ระบุเลขที่บิลจะถือว่าเป็นบิลของตัวเอง 1 รายการ
+      const groups = new Map<string, ImportedBillGroup>();
+      let anonCounter = 0;
+      rows.forEach((r) => {
+        const billNo = String(r.bill_no ?? "").trim() || `__anon_${anonCounter++}`;
+        if (!groups.has(billNo)) {
+          groups.set(billNo, {
+            bill_no: String(r.bill_no ?? "").trim(),
+            date: String(r.date ?? "").trim(),
+            customer_name: String(r.customer_name ?? "").trim(),
+            payment_method: String(r.payment_method ?? "").trim(),
+            items: [],
+          });
+        }
+        const g = groups.get(billNo)!;
+        if (!g.date && r.date) g.date = String(r.date).trim();
+        if (!g.customer_name && r.customer_name) g.customer_name = String(r.customer_name).trim();
+        if (!g.payment_method && r.payment_method) g.payment_method = String(r.payment_method).trim();
+        g.items.push({
+          sku: String(r.sku ?? "").trim(),
+          product_name: String(r.product_name ?? "").trim(),
+          qty: Number(r.qty) || 0,
+          unit_price: Number(r.unit_price) || 0,
+          discount: Number(r.discount) || 0,
+        });
+      });
+
+      let successCount = 0;
+      const errors: string[] = [];
+
+      for (const g of groups.values()) {
+        try {
+          const paymentKey = g.payment_method.toLowerCase();
+          const mappedMethod = PAYMENT_METHOD_MAP[paymentKey] ?? PAYMENT_METHOD_MAP[g.payment_method] ?? "cash";
+          let saleDate: string | null = null;
+          if (g.date) {
+            const parsed = new Date(g.date);
+            if (!isNaN(parsed.getTime())) saleDate = parsed.toISOString();
+          }
+          const { error: rpcError } = await supabase.rpc("import_historical_sale", {
+            p_sale_no: g.bill_no || null,
+            p_sale_date: saleDate,
+            p_customer_name: g.customer_name || null,
+            p_payment_method: mappedMethod,
+            p_items: g.items.map((it) => ({
+              sku: it.sku || null,
+              product_name: it.product_name || null,
+              qty: it.qty,
+              unit_price: it.unit_price,
+              discount: it.discount,
+            })),
+          });
+          if (rpcError) throw rpcError;
+          successCount++;
+        } catch (err: any) {
+          errors.push(`${g.bill_no || "(ไม่ระบุเลขที่บิล)"}: ${err.message ?? err}`);
+        }
+      }
+
+      setImportMsg(
+        `นำเข้าสำเร็จ ${successCount} บิล จากทั้งหมด ${groups.size} บิล` +
+          (errors.length > 0 ? ` — ล้มเหลว ${errors.length} บิล: ${errors.join(" | ")}` : "")
+      );
+      router.refresh();
+    } catch (err: any) {
+      setImportMsg(`นำเข้าไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -80,6 +238,24 @@ export default function SalesClient({
           ยอดขายวันนี้: <span className="font-bold text-brand">฿{todayTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
         </p>
       </div>
+
+      {isAdmin && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-4 shadow-sm">
+          <span className="text-sm font-medium text-gray-700">นำเข้าประวัติการขายเก่า:</span>
+          <button onClick={downloadSalesTemplate} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
+            ⬇️ ดาวน์โหลดเทมเพลต
+          </button>
+          <label className="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
+            {importing ? "กำลังนำเข้า..." : "📥 นำเข้าจาก Excel"}
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportFile} disabled={importing} className="hidden" />
+          </label>
+          <span className="text-xs text-gray-400">
+            สำหรับย้อนบันทึกบิลเก่า/ข้อมูลจากระบบอื่น เก็บเป็นประวัติเท่านั้น ไม่ตัดสต๊อกหรือให้แต้มสะสม
+          </span>
+        </div>
+      )}
+      {importMsg && <div className="mb-4 rounded-lg bg-blue-50 px-4 py-2 text-sm text-blue-700">{importMsg}</div>}
+
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
       {voidTarget && (
@@ -149,7 +325,12 @@ export default function SalesClient({
               const isVoid = s.status === "void";
               return (
                 <tr key={s.id} className={`border-b last:border-0 hover:bg-gray-50 ${isVoid ? "opacity-50" : ""}`}>
-                  <td className="px-4 py-3 font-medium">{s.sale_no}</td>
+                  <td className="px-4 py-3 font-medium">
+                    {s.sale_no}
+                    {s.source === "imported" && (
+                      <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">นำเข้า</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString("th-TH")}</td>
                   <td className="px-4 py-3">{s.customer_name ?? "-"}</td>
                   <td className="px-4 py-3 text-gray-500">{s.payment_method}</td>

@@ -26,6 +26,15 @@ const SALE_HEADER_MAP: Record<string, string> = {
   customer_name: "customer_name", "ชื่อลูกค้า": "customer_name",
 };
 
+const ORDER_HEADER_MAP: Record<string, string> = {
+  order_no: "order_no", "เลขออเดอร์": "order_no", "เลขที่ออเดอร์": "order_no", "เลขที่บิล": "order_no", "เลขบิล": "order_no",
+  date: "date", "วันที่": "date",
+  sku: "sku", "รหัสสินค้า": "sku", "รหัส": "sku",
+  product_name: "product_name", "สินค้า": "product_name", "ชื่อสินค้า": "product_name",
+  qty: "qty", "จำนวน": "qty",
+  unit_price: "unit_price", "ราคาต่อหน่วย": "unit_price", "ราคา": "unit_price",
+};
+
 const PAYMENT_METHOD_MAP: Record<string, string> = {
   cash: "cash", เงินสด: "cash",
   transfer: "transfer", โอน: "transfer", เงินโอน: "transfer",
@@ -83,6 +92,13 @@ export default function SalesClient({
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [orderChannel, setOrderChannel] = useState<SaleChannel>("shopee");
+  const [orderPlatformName, setOrderPlatformName] = useState("");
+  const [orderFeePct, setOrderFeePct] = useState("");
+  const [importingOrders, setImportingOrders] = useState(false);
+  const [orderImportMsg, setOrderImportMsg] = useState<string | null>(null);
+  const orderFileRef = useRef<HTMLInputElement>(null);
 
   const filtered = sales.filter(
     (s) =>
@@ -307,6 +323,130 @@ export default function SalesClient({
     XLSX.writeFile(wb, `ประวัติการขาย_${start}_ถึง_${end}.xlsx`);
   }
 
+  async function handleImportOrders(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (orderChannel === "other" && !orderPlatformName.trim()) {
+      setOrderImportMsg("กรุณาระบุชื่อแพลตฟอร์มก่อนนำเข้า");
+      return;
+    }
+    setImportingOrders(true);
+    setOrderImportMsg(null);
+    try {
+      const { data: productRows, error: prodErr } = await supabase
+        .from("products")
+        .select("id, sku, name, sell_price, stock_qty")
+        .eq("is_active", true);
+      if (prodErr) throw prodErr;
+      const productList = productRows ?? [];
+
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+      const rows = raw
+        .map((row) => {
+          const mapped: Record<string, any> = {};
+          for (const key of Object.keys(row)) {
+            const norm = ORDER_HEADER_MAP[key.trim()] ?? ORDER_HEADER_MAP[key.trim().toLowerCase()];
+            if (norm) mapped[norm] = row[key];
+          }
+          return mapped;
+        })
+        .filter((r) => (r.qty && Number(r.qty) > 0) && (String(r.sku ?? "").trim() || String(r.product_name ?? "").trim()));
+
+      if (rows.length === 0) {
+        setOrderImportMsg("ไม่พบข้อมูลที่ใช้ได้ในไฟล์ กรุณาตรวจสอบหัวคอลัมน์ เช่น เลขออเดอร์, สินค้า, จำนวน, ราคาต่อหน่วย");
+        return;
+      }
+
+      interface OrderItem { sku: string; product_name: string; qty: number; unit_price: number }
+      interface OrderGroup { order_no: string; items: OrderItem[] }
+      const groups = new Map<string, OrderGroup>();
+      let anonCounter = 0;
+      rows.forEach((r) => {
+        const orderNo = String(r.order_no ?? "").trim() || `__anon_${anonCounter++}`;
+        if (!groups.has(orderNo)) groups.set(orderNo, { order_no: String(r.order_no ?? "").trim(), items: [] });
+        groups.get(orderNo)!.items.push({
+          sku: String(r.sku ?? "").trim(),
+          product_name: String(r.product_name ?? "").trim(),
+          qty: Number(r.qty) || 0,
+          unit_price: Number(r.unit_price) || 0,
+        });
+      });
+
+      function findProduct(sku: string, name: string) {
+        if (sku) {
+          const bySku = productList.find((p) => (p.sku ?? "").trim().toLowerCase() === sku.toLowerCase());
+          if (bySku) return bySku;
+        }
+        if (name) {
+          const exact = productList.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
+          if (exact) return exact;
+          const contains = productList.filter((p) => p.name.toLowerCase().includes(name.toLowerCase()));
+          if (contains.length === 1) return contains[0];
+        }
+        return null;
+      }
+
+      let successCount = 0;
+      const errors: string[] = [];
+      const priceMismatches: string[] = [];
+
+      for (const g of groups.values()) {
+        try {
+          const items: { product_id: string; qty: number; discount: number }[] = [];
+          let orderTotal = 0;
+          for (const it of g.items) {
+            const product = findProduct(it.sku, it.product_name);
+            if (!product) {
+              throw new Error(`ไม่พบสินค้า "${it.sku || it.product_name}" ในระบบ`);
+            }
+            const catalogPrice = Number(product.sell_price);
+            const filePrice = it.unit_price > 0 ? it.unit_price : catalogPrice;
+            const discount = Math.round(Math.max(0, (catalogPrice - filePrice) * it.qty) * 100) / 100;
+            if (filePrice > catalogPrice) {
+              priceMismatches.push(`${product.name}: ไฟล์ ฿${filePrice} > ราคาในระบบ ฿${catalogPrice} (บันทึกตามราคาระบบ)`);
+            }
+            items.push({ product_id: product.id, qty: it.qty, discount });
+            orderTotal += catalogPrice * it.qty - discount;
+          }
+          orderTotal = Math.round(orderTotal * 100) / 100;
+
+          const { error: rpcError } = await supabase.rpc("create_sale", {
+            p_items: items,
+            p_payments: [{ method: "transfer", amount: orderTotal }],
+            p_bill_discount: 0,
+            p_customer_id: null,
+            p_customer_name: g.order_no ? `ออเดอร์ ${g.order_no}` : null,
+            p_customer_tax_id: null,
+            p_customer_address: null,
+            p_channel: orderChannel,
+            p_platform_name: orderChannel === "other" ? orderPlatformName.trim() || null : null,
+            p_platform_fee_pct: Number(orderFeePct) > 0 ? Number(orderFeePct) : null,
+          });
+          if (rpcError) throw rpcError;
+          successCount++;
+        } catch (err: any) {
+          errors.push(`${g.order_no || "(ไม่ระบุเลขออเดอร์)"}: ${err.message ?? err}`);
+        }
+      }
+
+      setOrderImportMsg(
+        `บันทึกสำเร็จ ${successCount} ออเดอร์ จากทั้งหมด ${groups.size} ออเดอร์ (ตัดสต๊อกแล้ว สถานะรอรับเงิน)` +
+          (errors.length > 0 ? ` — ล้มเหลว ${errors.length}: ${errors.join(" | ")}` : "") +
+          (priceMismatches.length > 0 ? ` ⚠ ราคาต่างจากระบบ: ${priceMismatches.join(", ")}` : "")
+      );
+      router.refresh();
+    } catch (err: any) {
+      setOrderImportMsg(`นำเข้าไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setImportingOrders(false);
+      if (orderFileRef.current) orderFileRef.current.value = "";
+    }
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -340,6 +480,59 @@ export default function SalesClient({
         </div>
       )}
       {importMsg && <div className="mb-4 rounded-lg bg-blue-50 px-4 py-2 text-sm text-blue-700">{importMsg}</div>}
+
+      {isAdmin && (
+        <div className="mb-4 space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+          <span className="text-sm font-medium text-gray-700">นำเข้าออเดอร์จากแพลตฟอร์ม (บันทึกขายจริง ตัดสต๊อก + สถานะรอรับเงิน):</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={orderChannel}
+              onChange={(e) => setOrderChannel(e.target.value as SaleChannel)}
+              className="rounded-lg border px-3 py-1.5 text-sm"
+            >
+              {(Object.keys(SALE_CHANNEL_LABEL) as SaleChannel[])
+                .filter((c) => c !== "store")
+                .map((c) => (
+                  <option key={c} value={c}>{SALE_CHANNEL_LABEL[c]}</option>
+                ))}
+            </select>
+            {orderChannel === "other" && (
+              <input
+                value={orderPlatformName}
+                onChange={(e) => setOrderPlatformName(e.target.value)}
+                placeholder="ชื่อแพลตฟอร์ม"
+                className="rounded-lg border px-3 py-1.5 text-sm"
+              />
+            )}
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              value={orderFeePct}
+              onChange={(e) => setOrderFeePct(e.target.value)}
+              placeholder="ค่าธรรมเนียม % (ถ้ามี)"
+              className="w-40 rounded-lg border px-3 py-1.5 text-sm"
+            />
+            <label className="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
+              {importingOrders ? "กำลังนำเข้า..." : "📥 นำเข้าไฟล์ออเดอร์"}
+              <input
+                ref={orderFileRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleImportOrders}
+                disabled={importingOrders}
+                className="hidden"
+              />
+            </label>
+          </div>
+          <p className="text-xs text-gray-400">
+            รองรับไฟล์ออเดอร์จากแพลตฟอร์มที่มีคอลัมน์ เลขออเดอร์, วันที่, สินค้า (หรือรหัสสินค้า), จำนวน, ราคาต่อหน่วย —
+            จับคู่สินค้าด้วยรหัส/ชื่อ ตัดสต๊อกจริง และตั้งสถานะเป็น "รอรับเงิน" ให้อัตโนมัติ (ยืนยันรับเงินได้ในตารางด้านล่างเมื่อแพลตฟอร์มโอนเงินมาแล้ว)
+          </p>
+          {orderImportMsg && <p className="text-xs text-blue-700">{orderImportMsg}</p>}
+        </div>
+      )}
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 

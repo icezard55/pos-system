@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { splitVat, EXPENSE_CATEGORY_LABEL, type Expense, type ExpenseCategory } from "@/lib/types";
+import { splitVat, EXPENSE_CATEGORY_LABEL, SALE_CHANNEL_LABEL, type Expense, type ExpenseCategory, type SaleChannel } from "@/lib/types";
 
 interface SaleRow {
   sale_no: string;
@@ -57,6 +57,17 @@ interface AccountsPayableRow {
   supplier_invoice_no: string | null;
 }
 
+interface AccountsReceivableRow {
+  id: string;
+  sale_no: string;
+  channel: SaleChannel;
+  platform_name: string | null;
+  created_at: string;
+  total: number;
+  platform_fee_amount: number;
+  customer_name: string | null;
+}
+
 function oneName(v: { name: string; unit?: string } | { name: string; unit?: string }[] | null): string {
   if (!v) return "-";
   return Array.isArray(v) ? v[0]?.name ?? "-" : v.name;
@@ -79,7 +90,7 @@ function daysOutstanding(receivedAt: string): number {
   return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
 }
 
-type Tab = "sales" | "receiving" | "stock_cost" | "out_of_stock" | "payable" | "expenses";
+type Tab = "sales" | "receiving" | "stock_cost" | "out_of_stock" | "payable" | "receivable" | "expenses";
 
 export default function ReportsClient({
   grandTotal,
@@ -93,6 +104,7 @@ export default function ReportsClient({
   stockValuation,
   outOfStock,
   accountsPayable,
+  accountsReceivable,
   expenses,
 }: {
   grandTotal: number;
@@ -106,6 +118,7 @@ export default function ReportsClient({
   stockValuation: StockValuationRow[];
   outOfStock: OutOfStockRow[];
   accountsPayable: AccountsPayableRow[];
+  accountsReceivable: AccountsReceivableRow[];
   expenses: Expense[];
 }) {
   const router = useRouter();
@@ -123,6 +136,7 @@ export default function ReportsClient({
   );
   const stockValueTotal = stockValuation.reduce((s, p) => s + Number(p.stock_qty) * Number(p.cost_price), 0);
   const payableTotal = accountsPayable.reduce((s, po) => s + Number(po.po_total), 0);
+  const receivableTotal = accountsReceivable.reduce((s, r) => s + Number(r.total), 0);
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
   const netProfit = grandProfit - totalExpenses;
   const expensesByCategory = expenses.reduce((acc, e) => {
@@ -145,6 +159,7 @@ export default function ReportsClient({
       { รายการ: "มูลค่าสต๊อกคงเหลือปัจจุบัน (ราคาทุน)", จำนวนเงิน: Number(stockValueTotal.toFixed(2)) },
       { รายการ: "จำนวนสินค้าหมดสต๊อกตอนนี้", จำนวนเงิน: outOfStock.length },
       { รายการ: "เจ้าหนี้การค้าคงค้าง (ยังไม่จ่าย+รอโอน)", จำนวนเงิน: Number(payableTotal.toFixed(2)) },
+      { รายการ: "ยอดขายแพลตฟอร์มที่รอรับเงิน", จำนวนเงิน: Number(receivableTotal.toFixed(2)) },
     ]);
     XLSX.utils.book_append_sheet(wb, summarySheet, "สรุป");
 
@@ -225,6 +240,19 @@ export default function ReportsClient({
     );
     XLSX.utils.book_append_sheet(wb, payableSheet, "เจ้าหนี้การค้า");
 
+    const receivableSheet = XLSX.utils.json_to_sheet(
+      accountsReceivable.map((r) => ({
+        เลขที่บิล: r.sale_no,
+        ช่องทาง: r.channel === "other" ? (r.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[r.channel],
+        วันที่ขาย: new Date(r.created_at).toLocaleString("th-TH"),
+        ยอดขาย: Number(Number(r.total).toFixed(2)),
+        ค่าธรรมเนียมแพลตฟอร์ม: Number(Number(r.platform_fee_amount).toFixed(2)),
+        คาดว่าจะได้รับสุทธิ: Number((Number(r.total) - Number(r.platform_fee_amount)).toFixed(2)),
+        ค้างมาแล้ว_วัน: daysOutstanding(r.created_at),
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, receivableSheet, "รอรับเงินแพลตฟอร์ม");
+
     const expensesSheet = XLSX.utils.json_to_sheet(
       expenses.map((e) => ({
         วันที่: new Date(e.expense_date).toLocaleDateString("th-TH"),
@@ -245,6 +273,7 @@ export default function ReportsClient({
     { key: "stock_cost", label: "ต้นทุนสต๊อก" },
     { key: "out_of_stock", label: `สินค้าหมดสต๊อก (${outOfStock.length})` },
     { key: "payable", label: `เจ้าหนี้การค้า (${accountsPayable.length})` },
+    { key: "receivable", label: `รอรับเงินแพลตฟอร์ม (${accountsReceivable.length})` },
     { key: "expenses", label: "รายจ่าย" },
   ];
 
@@ -492,6 +521,51 @@ export default function ReportsClient({
           </table>
           <p className="mt-3 text-xs text-gray-400">
             ไปที่เมนู "ใบสั่งซื้อ" เพื่ออัปเดตสถานะการจ่ายเงินของแต่ละใบ
+          </p>
+        </div>
+      )}
+
+      {tab === "receivable" && (
+        <div className="rounded-2xl bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold">ยอดขายแพลตฟอร์มที่รอรับเงิน</h2>
+            <p className="text-sm text-gray-500">
+              รวมทั้งหมด <span className="font-bold text-amber-600">฿{receivableTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+            </p>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-left text-gray-500">
+                <th className="py-2">เลขที่บิล</th>
+                <th className="py-2">ช่องทาง</th>
+                <th className="py-2">วันที่ขาย</th>
+                <th className="py-2 text-right">ค้างมาแล้ว</th>
+                <th className="py-2 text-right">ยอดขาย</th>
+                <th className="py-2 text-right">ค่าธรรมเนียม</th>
+                <th className="py-2 text-right">คาดว่าจะได้รับสุทธิ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accountsReceivable.map((r) => (
+                <tr key={r.id} className="border-b last:border-0">
+                  <td className="py-2">{r.sale_no}</td>
+                  <td className="py-2 text-gray-500">
+                    {r.channel === "other" ? (r.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[r.channel]}
+                  </td>
+                  <td className="py-2 text-gray-500">{new Date(r.created_at).toLocaleDateString("th-TH")}</td>
+                  <td className="py-2 text-right text-gray-500">{daysOutstanding(r.created_at)} วัน</td>
+                  <td className="py-2 text-right font-medium">฿{Number(r.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                  <td className="py-2 text-right text-red-500">-฿{Number(r.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                  <td className="py-2 text-right font-semibold text-amber-600">
+                    ฿{(Number(r.total) - Number(r.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              ))}
+              {accountsReceivable.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-gray-400">ไม่มียอดขายแพลตฟอร์มที่รอรับเงิน 🎉</td></tr>}
+            </tbody>
+          </table>
+          <p className="mt-3 text-xs text-gray-400">
+            ไปที่เมนู "ประวัติการขาย" เพื่อกดยืนยันเมื่อได้รับเงินแล้ว
           </p>
         </div>
       )}

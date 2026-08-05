@@ -62,7 +62,14 @@ export interface Sale {
   platform_name: string | null;
   platform_fee_pct: number | null;
   platform_fee_amount: number;
+  payment_status: "unpaid" | "paid";
+  received_at: string | null;
 }
+
+export const SALE_PAYMENT_STATUS_LABEL: Record<"unpaid" | "paid", string> = {
+  unpaid: "รอรับเงิน",
+  paid: "ได้รับเงินแล้ว",
+};
 
 export interface SalePayment {
   id: string;

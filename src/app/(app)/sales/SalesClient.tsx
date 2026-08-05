@@ -5,7 +5,14 @@ import Link from "next/link";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
 import type { Sale, SaleChannel } from "@/lib/types";
-import { SALE_CHANNEL_LABEL } from "@/lib/types";
+import { SALE_CHANNEL_LABEL, SALE_PAYMENT_STATUS_LABEL } from "@/lib/types";
+
+function toLocalISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 const SALE_HEADER_MAP: Record<string, string> = {
   bill_no: "bill_no", "เลขที่บิล": "bill_no", "เลขบิล": "bill_no",
@@ -61,8 +68,13 @@ export default function SalesClient({
   const [start, setStart] = useState(startDate);
   const [end, setEnd] = useState(endDate);
   const [channelFilter, setChannelFilter] = useState<SaleChannel | "all">("all");
+  const [paymentFilter, setPaymentFilter] = useState<"all" | "unpaid" | "paid">("all");
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [receiveTarget, setReceiveTarget] = useState<Sale | null>(null);
+  const [receiveDate, setReceiveDate] = useState(toLocalISODate(new Date()));
+  const [receiving, setReceiving] = useState(false);
 
   const [voidTarget, setVoidTarget] = useState<Sale | null>(null);
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -75,8 +87,49 @@ export default function SalesClient({
   const filtered = sales.filter(
     (s) =>
       (s.sale_no.toLowerCase().includes(search.toLowerCase()) || (s.customer_name ?? "").toLowerCase().includes(search.toLowerCase())) &&
-      (channelFilter === "all" || s.channel === channelFilter)
+      (channelFilter === "all" || s.channel === channelFilter) &&
+      (paymentFilter === "all" || s.payment_status === paymentFilter)
   );
+
+  function openReceiveConfirm(sale: Sale) {
+    setReceiveTarget(sale);
+    setReceiveDate(toLocalISODate(new Date()));
+  }
+
+  async function handleConfirmReceive(e: React.FormEvent) {
+    e.preventDefault();
+    if (!receiveTarget) return;
+    setReceiving(true);
+    setError(null);
+    try {
+      const { error } = await supabase.rpc("set_sale_payment_status", {
+        p_sale_id: receiveTarget.id,
+        p_paid: true,
+        p_received_date: receiveDate,
+      });
+      if (error) throw error;
+      setReceiveTarget(null);
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? "อัปเดตสถานะรับเงินไม่สำเร็จ");
+    } finally {
+      setReceiving(false);
+    }
+  }
+
+  async function handleUndoReceive(sale: Sale) {
+    setError(null);
+    try {
+      const { error } = await supabase.rpc("set_sale_payment_status", {
+        p_sale_id: sale.id,
+        p_paid: false,
+      });
+      if (error) throw error;
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? "อัปเดตสถานะรับเงินไม่สำเร็จ");
+    }
+  }
 
   const todayTotal = sales
     .filter((s) => s.status !== "void" && new Date(s.created_at).toDateString() === new Date().toDateString())
@@ -293,6 +346,38 @@ export default function SalesClient({
         </div>
       )}
 
+      {receiveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form onSubmit={handleConfirmReceive} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="mb-1 font-bold text-gray-800">ยืนยันรับเงินบิล {receiveTarget.sale_no}</h2>
+            <p className="mb-3 text-xs text-gray-500">
+              บันทึกว่าได้รับเงินจาก{receiveTarget.channel === "other" ? (receiveTarget.platform_name || "แพลตฟอร์ม") : SALE_CHANNEL_LABEL[receiveTarget.channel]}แล้ว
+            </p>
+            <label className="mb-1 block text-xs text-gray-600">วันที่ได้รับเงิน</label>
+            <input
+              type="date"
+              autoFocus
+              value={receiveDate}
+              onChange={(e) => setReceiveDate(e.target.value)}
+              required
+              className="mb-3 w-full rounded-lg border px-3 py-2 text-sm"
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={receiving}
+                className="flex-1 rounded-lg bg-green-600 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+              >
+                {receiving ? "กำลังบันทึก..." : "ยืนยันรับเงินแล้ว"}
+              </button>
+              <button type="button" onClick={() => setReceiveTarget(null)} className="flex-1 rounded-lg border py-2 text-sm hover:bg-gray-50">
+                ยกเลิก
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       <div className="mb-4 flex flex-wrap items-end gap-2 rounded-2xl bg-white p-4 shadow-sm">
         <div>
           <label className="mb-1 block text-xs text-gray-600">จากวันที่</label>
@@ -321,6 +406,15 @@ export default function SalesClient({
           {(Object.keys(SALE_CHANNEL_LABEL) as SaleChannel[]).map((c) => (
             <option key={c} value={c}>{SALE_CHANNEL_LABEL[c]}</option>
           ))}
+        </select>
+        <select
+          value={paymentFilter}
+          onChange={(e) => setPaymentFilter(e.target.value as "all" | "unpaid" | "paid")}
+          className="rounded-lg border px-3 py-2 text-sm"
+        >
+          <option value="all">ทุกสถานะรับเงิน</option>
+          <option value="unpaid">รอรับเงิน</option>
+          <option value="paid">ได้รับเงินแล้ว</option>
         </select>
       </div>
       <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
@@ -361,11 +455,22 @@ export default function SalesClient({
                   <td className="px-4 py-3">{s.customer_name ?? "-"}</td>
                   <td className="px-4 py-3 text-gray-500">{s.payment_method}</td>
                   <td className="px-4 py-3">
-                    {isVoid ? (
-                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">ยกเลิกแล้ว</span>
-                    ) : (
-                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">สำเร็จ</span>
-                    )}
+                    <div className="flex flex-wrap items-center gap-1">
+                      {isVoid ? (
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">ยกเลิกแล้ว</span>
+                      ) : (
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">สำเร็จ</span>
+                      )}
+                      {!isVoid && s.channel !== "store" && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            s.payment_status === "unpaid" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                          }`}
+                        >
+                          {SALE_PAYMENT_STATUS_LABEL[s.payment_status]}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className={`px-4 py-3 text-right font-semibold ${isVoid ? "line-through" : ""}`}>
                     ฿{Number(s.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
@@ -373,6 +478,22 @@ export default function SalesClient({
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <Link href={`/receipt/${s.id}`} className="text-brand hover:underline">ดูใบเสร็จ</Link>
+                      {isAdmin && !isVoid && s.channel !== "store" && s.payment_status === "unpaid" && (
+                        <button
+                          onClick={() => openReceiveConfirm(s)}
+                          className="text-emerald-600 hover:underline"
+                        >
+                          ยืนยันรับเงิน
+                        </button>
+                      )}
+                      {isAdmin && !isVoid && s.channel !== "store" && s.payment_status === "paid" && (
+                        <button
+                          onClick={() => handleUndoReceive(s)}
+                          className="text-gray-400 hover:underline"
+                        >
+                          ยกเลิกรับเงิน
+                        </button>
+                      )}
                       {isAdmin && !isVoid && (
                         <button
                           onClick={() => openVoidConfirm(s)}

@@ -53,6 +53,7 @@ export default async function ReportsPage({
 
   const { data: outOfStock } = await supabase.rpc("report_out_of_stock");
   const { data: accountsPayable } = await supabase.rpc("report_accounts_payable");
+  const { data: accountsReceivable } = await supabase.rpc("report_accounts_receivable");
 
   const { data: expenses } = await supabase
     .from("expenses")
@@ -106,6 +107,7 @@ export default async function ReportsPage({
       stockValuation={stockValuation ?? []}
       outOfStock={outOfStock ?? []}
       accountsPayable={accountsPayable ?? []}
+      accountsReceivable={accountsReceivable ?? []}
       expenses={(expenses as any) ?? []}
     />
   );

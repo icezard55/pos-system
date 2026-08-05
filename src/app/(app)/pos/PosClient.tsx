@@ -358,6 +358,9 @@ export default function PosClient({ products }: { products: Product[] }) {
 
           {channel !== "store" && (
             <div className="space-y-2 rounded-lg border border-dashed p-2">
+              <p className="text-xs text-amber-600">
+                บิลนี้จะถูกบันทึกเป็นสถานะ "รอรับเงิน" อัตโนมัติ จนกว่าจะกดยืนยันว่าได้รับเงินแล้วในหน้าประวัติการขาย
+              </p>
               {channel === "other" && (
                 <input
                   value={platformNameOther}

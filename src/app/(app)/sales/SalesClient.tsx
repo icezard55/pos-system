@@ -287,13 +287,41 @@ export default function SalesClient({
     }
   }
 
+  function downloadSalesExport() {
+    const ws = XLSX.utils.json_to_sheet(
+      filtered.map((s) => ({
+        "เลขที่บิล": s.sale_no,
+        "วันที่": new Date(s.created_at).toLocaleString("th-TH"),
+        "ลูกค้า": s.customer_name ?? "",
+        "ช่องทาง": s.channel === "other" ? (s.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[s.channel],
+        "ชำระโดย": s.payment_method,
+        "สถานะบิล": s.status === "void" ? "ยกเลิกแล้ว" : "สำเร็จ",
+        "สถานะรับเงิน": SALE_PAYMENT_STATUS_LABEL[s.payment_status],
+        "ยอดสุทธิ": Number(Number(s.total).toFixed(2)),
+        "ค่าธรรมเนียมแพลตฟอร์ม": Number(Number(s.platform_fee_amount).toFixed(2)),
+        "ที่มา": s.source === "imported" ? "นำเข้า" : "ขายในระบบ",
+      }))
+    );
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ประวัติการขาย");
+    XLSX.writeFile(wb, `ประวัติการขาย_${start}_ถึง_${end}.xlsx`);
+  }
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">ประวัติการขาย</h1>
-        <p className="text-sm text-gray-500">
-          ยอดขายวันนี้: <span className="font-bold text-brand">฿{todayTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-gray-500">
+            ยอดขายวันนี้: <span className="font-bold text-brand">฿{todayTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+          </p>
+          <button
+            onClick={downloadSalesExport}
+            className="rounded-lg bg-brand px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-dark"
+          >
+            📊 ส่งออก Excel
+          </button>
+        </div>
       </div>
 
       {isAdmin && (

@@ -297,6 +297,44 @@ export default function PurchaseOrdersClient({
     }
   }
 
+  function downloadPOExport() {
+    const statusLabel: Record<PO["status"], string> = { draft: "รอรับสินค้า", received: "รับเข้าแล้ว", cancelled: "ยกเลิกแล้ว" };
+
+    const summarySheet = XLSX.utils.json_to_sheet(
+      orders.map((po) => ({
+        "ผู้จัดจำหน่าย": oneName(po.suppliers),
+        "เลขที่บิลผู้จัดจำหน่าย": po.supplier_invoice_no ?? "",
+        "สถานะ": statusLabel[po.status],
+        "สถานะจ่ายเงิน": po.status === "received" ? paymentLabel[po.payment_status] : "",
+        "วันที่สร้าง": new Date(po.created_at).toLocaleString("th-TH"),
+        "วันที่รับเข้า": po.received_at ? new Date(po.received_at).toLocaleString("th-TH") : "",
+        "วันที่จ่ายเงิน": po.paid_at ? new Date(po.paid_at).toLocaleString("th-TH") : "",
+        "ค่าขนส่ง": Number(Number(po.freight_cost || 0).toFixed(2)),
+        "มูลค่าใบสั่งซื้อ": Number(Number(po.po_total ?? 0).toFixed(2)),
+        "หมายเหตุ": po.note ?? "",
+      }))
+    );
+
+    const itemRows: Record<string, any>[] = [];
+    orders.forEach((po) => {
+      po.purchase_order_items.forEach((it) => {
+        itemRows.push({
+          "ผู้จัดจำหน่าย": oneName(po.suppliers),
+          "เลขที่บิลผู้จัดจำหน่าย": po.supplier_invoice_no ?? "",
+          "สินค้า": oneName(it.products),
+          "จำนวน": Number(it.qty),
+          "ราคาทุนต่อหน่วย": Number(it.unit_cost),
+          "รวม": Number((Number(it.qty) * Number(it.unit_cost)).toFixed(2)),
+        });
+      });
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, summarySheet, "ใบสั่งซื้อ");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemRows), "รายการสินค้า");
+    XLSX.writeFile(wb, `ใบสั่งซื้อ_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
   async function handlePaymentStatus(po: PO, status: PaymentStatus) {
     if (status === "paid" && !confirm(`ยืนยันว่าจ่ายเงินให้ผู้จัดจำหน่ายรายนี้ครบแล้ว?`)) return;
     setPayingId(po.id);
@@ -316,9 +354,14 @@ export default function PurchaseOrdersClient({
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">ใบสั่งซื้อสินค้า</h1>
-        <button onClick={() => setShowCreate((v) => !v)} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-          {showCreate ? "ยกเลิก" : "+ สร้างใบสั่งซื้อ"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={downloadPOExport} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold hover:bg-gray-50">
+            📊 ส่งออก Excel
+          </button>
+          <button onClick={() => setShowCreate((v) => !v)} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
+            {showCreate ? "ยกเลิก" : "+ สร้างใบสั่งซื้อ"}
+          </button>
+        </div>
       </div>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}

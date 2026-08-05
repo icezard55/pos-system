@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
-import type { Sale } from "@/lib/types";
+import type { Sale, SaleChannel } from "@/lib/types";
+import { SALE_CHANNEL_LABEL } from "@/lib/types";
 
 const SALE_HEADER_MAP: Record<string, string> = {
   bill_no: "bill_no", "เลขที่บิล": "bill_no", "เลขบิล": "bill_no",
@@ -59,6 +60,7 @@ export default function SalesClient({
   const [search, setSearch] = useState("");
   const [start, setStart] = useState(startDate);
   const [end, setEnd] = useState(endDate);
+  const [channelFilter, setChannelFilter] = useState<SaleChannel | "all">("all");
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,7 +73,9 @@ export default function SalesClient({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const filtered = sales.filter(
-    (s) => s.sale_no.toLowerCase().includes(search.toLowerCase()) || (s.customer_name ?? "").toLowerCase().includes(search.toLowerCase())
+    (s) =>
+      (s.sale_no.toLowerCase().includes(search.toLowerCase()) || (s.customer_name ?? "").toLowerCase().includes(search.toLowerCase())) &&
+      (channelFilter === "all" || s.channel === channelFilter)
   );
 
   const todayTotal = sales
@@ -301,12 +305,24 @@ export default function SalesClient({
         <button onClick={applyRange} className="rounded-lg border px-4 py-1.5 text-sm hover:bg-gray-50">แสดงผล</button>
       </div>
 
-      <input
-        placeholder="ค้นหาเลขที่บิลหรือชื่อลูกค้า..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="mb-4 w-full max-w-sm rounded-lg border px-3 py-2 text-sm"
-      />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <input
+          placeholder="ค้นหาเลขที่บิลหรือชื่อลูกค้า..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full max-w-sm rounded-lg border px-3 py-2 text-sm"
+        />
+        <select
+          value={channelFilter}
+          onChange={(e) => setChannelFilter(e.target.value as SaleChannel | "all")}
+          className="rounded-lg border px-3 py-2 text-sm"
+        >
+          <option value="all">ทุกช่องทาง</option>
+          {(Object.keys(SALE_CHANNEL_LABEL) as SaleChannel[]).map((c) => (
+            <option key={c} value={c}>{SALE_CHANNEL_LABEL[c]}</option>
+          ))}
+        </select>
+      </div>
       <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
         <table className="w-full text-sm">
           <thead>
@@ -329,6 +345,16 @@ export default function SalesClient({
                     {s.sale_no}
                     {s.source === "imported" && (
                       <span className="ml-2 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">นำเข้า</span>
+                    )}
+                    {s.channel !== "store" && (
+                      <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                        {s.channel === "other" ? (s.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[s.channel]}
+                      </span>
+                    )}
+                    {s.platform_fee_amount > 0 && (
+                      <span className="ml-1 text-[10px] text-gray-400">
+                        (ค่าธรรมเนียม ฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })})
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString("th-TH")}</td>

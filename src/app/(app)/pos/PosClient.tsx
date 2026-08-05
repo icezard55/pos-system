@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { CartLine, Customer, PaymentMethod, Product } from "@/lib/types";
-import { splitVat } from "@/lib/types";
+import type { CartLine, Customer, PaymentMethod, Product, SaleChannel } from "@/lib/types";
+import { splitVat, SALE_CHANNEL_LABEL } from "@/lib/types";
 
 interface PaymentRow {
   method: PaymentMethod;
@@ -34,6 +34,11 @@ export default function PosClient({ products }: { products: Product[] }) {
   const [singleMethod, setSingleMethod] = useState<PaymentMethod>("cash");
   const [payRows, setPayRows] = useState<PaymentRow[]>([{ method: "cash", amount: "" }]);
 
+  // ช่องทางการขาย (หน้าร้าน / แพลตฟอร์มออนไลน์)
+  const [channel, setChannel] = useState<SaleChannel>("store");
+  const [platformNameOther, setPlatformNameOther] = useState("");
+  const [platformFeePct, setPlatformFeePct] = useState("");
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return products.slice(0, 30);
@@ -47,6 +52,11 @@ export default function PosClient({ products }: { products: Product[] }) {
 
   const payRowsSum = payRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const remaining = Math.round((total - payRowsSum) * 100) / 100;
+
+  const estimatedPlatformFee =
+    channel !== "store" && Number(platformFeePct) > 0
+      ? Math.round(total * (Number(platformFeePct) / 100) * 100) / 100
+      : 0;
 
   useEffect(() => {
     const q = customerQuery.trim();
@@ -158,6 +168,10 @@ export default function PosClient({ products }: { products: Product[] }) {
         throw new Error("การขายเชื่อต้องเลือกลูกค้าก่อน");
       }
 
+      if (channel === "other" && !platformNameOther.trim()) {
+        throw new Error("กรุณาระบุชื่อแพลตฟอร์ม");
+      }
+
       const { data, error } = await supabase.rpc("create_sale", {
         p_items: items,
         p_payments: payments,
@@ -166,6 +180,9 @@ export default function PosClient({ products }: { products: Product[] }) {
         p_customer_name: customerName || null,
         p_customer_tax_id: showTaxFields ? customerTaxId || null : null,
         p_customer_address: showTaxFields ? customerAddress || null : null,
+        p_channel: channel,
+        p_platform_name: channel === "other" ? platformNameOther.trim() || null : null,
+        p_platform_fee_pct: channel !== "store" && Number(platformFeePct) > 0 ? Number(platformFeePct) : null,
       });
       if (error) throw error;
       const saleId = data?.[0]?.sale_id;
@@ -178,6 +195,9 @@ export default function PosClient({ products }: { products: Product[] }) {
       setShowTaxFields(false);
       setSplitMode(false);
       setPayRows([{ method: "cash", amount: "" }]);
+      setChannel("store");
+      setPlatformNameOther("");
+      setPlatformFeePct("");
       if (saleId) router.push(`/receipt/${saleId}`);
     } catch (err: any) {
       setError(err.message ?? "บันทึกการขายไม่สำเร็จ");
@@ -320,6 +340,51 @@ export default function PosClient({ products }: { products: Product[] }) {
                 rows={2}
                 className="w-full rounded-lg border px-3 py-1.5 text-sm"
               />
+            </div>
+          )}
+
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">ช่องทางการขาย</label>
+            <select
+              value={channel}
+              onChange={(e) => setChannel(e.target.value as SaleChannel)}
+              className="w-full rounded-lg border px-3 py-1.5 text-sm"
+            >
+              {(Object.keys(SALE_CHANNEL_LABEL) as SaleChannel[]).map((c) => (
+                <option key={c} value={c}>{SALE_CHANNEL_LABEL[c]}</option>
+              ))}
+            </select>
+          </div>
+
+          {channel !== "store" && (
+            <div className="space-y-2 rounded-lg border border-dashed p-2">
+              {channel === "other" && (
+                <input
+                  value={platformNameOther}
+                  onChange={(e) => setPlatformNameOther(e.target.value)}
+                  placeholder="ชื่อแพลตฟอร์ม (ระบุเอง)"
+                  className="w-full rounded-lg border px-3 py-1.5 text-sm"
+                />
+              )}
+              <div>
+                <label className="mb-1 block text-xs text-gray-600">ค่าธรรมเนียมแพลตฟอร์ม (% ถ้ามี)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step="0.01"
+                  value={platformFeePct}
+                  onChange={(e) => setPlatformFeePct(e.target.value)}
+                  placeholder="เช่น 5"
+                  className="w-full rounded-lg border px-3 py-1.5 text-sm"
+                />
+              </div>
+              {estimatedPlatformFee > 0 && (
+                <p className="text-xs text-gray-500">
+                  ค่าธรรมเนียมโดยประมาณ ฿{estimatedPlatformFee.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                  — ระบบจะบันทึกเป็นรายจ่ายให้อัตโนมัติเมื่อยืนยันการขาย
+                </p>
+              )}
             </div>
           )}
 

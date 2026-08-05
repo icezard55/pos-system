@@ -32,6 +32,16 @@ export interface SaleItem {
   cost_price: number;
 }
 
+export type SaleChannel = "store" | "shopee" | "lazada" | "tiktok" | "other";
+
+export const SALE_CHANNEL_LABEL: Record<SaleChannel, string> = {
+  store: "หน้าร้าน",
+  shopee: "Shopee",
+  lazada: "Lazada",
+  tiktok: "TikTok Shop",
+  other: "แพลตฟอร์มอื่น",
+};
+
 export interface Sale {
   id: string;
   sale_no: string;
@@ -48,6 +58,10 @@ export interface Sale {
   created_at: string;
   shift_id: string | null;
   source: "pos" | "imported";
+  channel: SaleChannel;
+  platform_name: string | null;
+  platform_fee_pct: number | null;
+  platform_fee_amount: number;
 }
 
 export interface SalePayment {
@@ -124,9 +138,10 @@ export type ExpenseCategory =
   | "travel"
   | "main_food"
   | "dessert"
+  | "platform_fee"
   | "other";
 
-export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping">;
+export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping" | "platform_fee">;
 
 export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   water: "ค่าน้ำ",
@@ -141,6 +156,7 @@ export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   travel: "ท่องเที่ยว",
   main_food: "อาหารหลัก",
   dessert: "ของหวาน",
+  platform_fee: "ค่าธรรมเนียมแพลตฟอร์ม",
   other: "อื่นๆ",
 };
 
@@ -159,7 +175,7 @@ export const RECURRING_EXPENSE_CATEGORIES: RecurringExpenseCategory[] = [
   "other",
 ];
 
-export type ExpenseSource = "manual" | "po_freight" | "recurring";
+export type ExpenseSource = "manual" | "po_freight" | "recurring" | "platform_fee";
 
 export interface Expense {
   id: string;
@@ -170,6 +186,7 @@ export interface Expense {
   source: ExpenseSource;
   po_id: string | null;
   recurring_id: string | null;
+  sale_id: string | null;
   created_by: string | null;
   created_at: string;
 }

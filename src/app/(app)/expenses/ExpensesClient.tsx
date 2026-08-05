@@ -16,12 +16,14 @@ const sourceLabel: Record<Expense["source"], string> = {
   manual: "บันทึกเอง",
   po_freight: "ค่าขนส่ง (ใบสั่งซื้อ)",
   recurring: "รายการประจำ",
+  platform_fee: "ค่าธรรมเนียมแพลตฟอร์ม (อัตโนมัติ)",
 };
 
 const sourceBadgeClass: Record<Expense["source"], string> = {
   manual: "bg-gray-100 text-gray-600",
   po_freight: "bg-blue-100 text-blue-700",
   recurring: "bg-purple-100 text-purple-700",
+  platform_fee: "bg-amber-100 text-amber-700",
 };
 
 function toLocalISODate(d: Date): string {

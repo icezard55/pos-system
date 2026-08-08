@@ -11,6 +11,16 @@ const PO_HEADER_MAP: Record<string, string> = {
   qty: "qty", "จำนวน": "qty",
 };
 
+const PO_EDIT_HEADER_MAP: Record<string, string> = {
+  po_id: "po_id", "รหัสใบสั่งซื้อ": "po_id",
+  item_id: "item_id", "รหัสรายการ": "item_id",
+  invoice_no: "invoice_no", "เลขที่บิลผู้จัดจำหน่าย": "invoice_no",
+  freight: "freight", "ค่าขนส่ง": "freight",
+  note: "note", "หมายเหตุ": "note",
+  qty: "qty", "จำนวน": "qty",
+  unit_cost: "unit_cost", "ราคาทุนต่อหน่วย": "unit_cost",
+};
+
 interface SupplierOption {
   id: string;
   name: string;
@@ -159,6 +169,10 @@ export default function PurchaseOrdersClient({
   const [error, setError] = useState<string | null>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const [editImporting, setEditImporting] = useState(false);
+  const [editImportMsg, setEditImportMsg] = useState<string | null>(null);
+  const editFileRef = useRef<HTMLInputElement>(null);
 
   const payable = orders.filter((po) => po.status === "received" && po.payment_status !== "paid");
   const payableTotal = payable.reduce((s, po) => s + Number(po.po_total ?? 0), 0);
@@ -335,6 +349,120 @@ export default function PurchaseOrdersClient({
     XLSX.writeFile(wb, `ใบสั่งซื้อ_${new Date().toISOString().slice(0, 10)}.xlsx`);
   }
 
+  function downloadEditablePOs() {
+    const draftOrders = orders.filter((po) => po.status === "draft");
+    const rows: Record<string, any>[] = [];
+    draftOrders.forEach((po) => {
+      po.purchase_order_items.forEach((it) => {
+        rows.push({
+          "รหัสใบสั่งซื้อ": po.id,
+          "รหัสรายการ": it.id,
+          "ผู้จัดจำหน่าย": oneName(po.suppliers),
+          "วันที่สร้าง": new Date(po.created_at).toLocaleString("th-TH"),
+          "เลขที่บิลผู้จัดจำหน่าย": po.supplier_invoice_no ?? "",
+          "ค่าขนส่ง": Number(po.freight_cost || 0),
+          "หมายเหตุ": po.note ?? "",
+          "สินค้า": oneName(it.products),
+          "จำนวน": Number(it.qty),
+          "ราคาทุนต่อหน่วย": Number(it.unit_cost),
+        });
+      });
+    });
+    if (rows.length === 0) {
+      alert("ไม่มีใบสั่งซื้อที่ยังไม่รับสินค้าเข้า (สถานะรอรับสินค้า) ให้ดาวน์โหลด");
+      return;
+    }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "แก้ไขใบสั่งซื้อ");
+    XLSX.writeFile(wb, `แก้ไขใบสั่งซื้อ_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  }
+
+  async function handleImportPOEdits(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditImporting(true);
+    setEditImportMsg(null);
+    setError(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+
+      const rows = raw
+        .map((row) => {
+          const mapped: Record<string, any> = {};
+          for (const key of Object.keys(row)) {
+            const norm = PO_EDIT_HEADER_MAP[key.trim()] ?? PO_EDIT_HEADER_MAP[key.trim().toLowerCase()];
+            if (norm) mapped[norm] = row[key];
+          }
+          return mapped;
+        })
+        .filter((r) => String(r.po_id ?? "").trim() && String(r.item_id ?? "").trim());
+
+      if (rows.length === 0) {
+        setEditImportMsg("ไม่พบข้อมูลที่ใช้ได้ในไฟล์ — ห้ามลบหรือแก้คอลัมน์ \"รหัสใบสั่งซื้อ\" และ \"รหัสรายการ\" เพราะใช้จับคู่ข้อมูลเดิม");
+        return;
+      }
+
+      interface EditGroup {
+        po_id: string;
+        invoice_no: string;
+        freight: string;
+        note: string;
+        items: { item_id: string; qty: number; unit_cost: number }[];
+      }
+      const groups = new Map<string, EditGroup>();
+      rows.forEach((r) => {
+        const poId = String(r.po_id).trim();
+        if (!groups.has(poId)) {
+          groups.set(poId, {
+            po_id: poId,
+            invoice_no: String(r.invoice_no ?? "").trim(),
+            freight: String(r.freight ?? "").trim(),
+            note: String(r.note ?? "").trim(),
+            items: [],
+          });
+        }
+        groups.get(poId)!.items.push({
+          item_id: String(r.item_id).trim(),
+          qty: Number(r.qty) || 0,
+          unit_cost: Number(r.unit_cost) || 0,
+        });
+      });
+
+      let successCount = 0;
+      const errors: string[] = [];
+      for (const g of groups.values()) {
+        try {
+          const { error: rpcError } = await supabase.rpc("update_draft_purchase_order", {
+            p_po_id: g.po_id,
+            p_supplier_invoice_no: g.invoice_no || null,
+            p_freight_cost: Number(g.freight) || 0,
+            p_note: g.note || null,
+            p_items: g.items,
+          });
+          if (rpcError) throw rpcError;
+          successCount++;
+        } catch (err: any) {
+          errors.push(`${err.message ?? err}`);
+        }
+      }
+
+      setEditImportMsg(
+        `อัปเดตสำเร็จ ${successCount} ใบ จากทั้งหมด ${groups.size} ใบ` +
+          (errors.length > 0 ? ` — ล้มเหลว ${errors.length}: ${errors.join(" | ")}` : "")
+      );
+      router.refresh();
+    } catch (err: any) {
+      setEditImportMsg(`นำเข้าไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setEditImporting(false);
+      if (editFileRef.current) editFileRef.current.value = "";
+    }
+  }
+
   async function handlePaymentStatus(po: PO, status: PaymentStatus) {
     if (status === "paid" && !confirm(`ยืนยันว่าจ่ายเงินให้ผู้จัดจำหน่ายรายนี้ครบแล้ว?`)) return;
     setPayingId(po.id);
@@ -362,6 +490,32 @@ export default function PurchaseOrdersClient({
             {showCreate ? "ยกเลิก" : "+ สร้างใบสั่งซื้อ"}
           </button>
         </div>
+      </div>
+
+      <div className="mb-6 space-y-2 rounded-2xl bg-white p-4 shadow-sm">
+        <span className="text-sm font-medium text-gray-700">แก้ไขใบสั่งซื้อที่มีอยู่ผ่าน Excel:</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={downloadEditablePOs} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
+            ⬇️ ดาวน์โหลดใบสั่งซื้อ (แก้ไขได้)
+          </button>
+          <label className="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
+            {editImporting ? "กำลังอัปเดต..." : "📥 นำเข้าไฟล์ที่แก้ไขแล้ว"}
+            <input
+              ref={editFileRef}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={handleImportPOEdits}
+              disabled={editImporting}
+              className="hidden"
+            />
+          </label>
+        </div>
+        <p className="text-xs text-gray-400">
+          ดาวน์โหลดได้เฉพาะใบสั่งซื้อที่ยังไม่รับสินค้าเข้า (สถานะรอรับสินค้า) แก้ไขจำนวน/ราคาทุน/เลขที่บิล/ค่าขนส่ง/หมายเหตุ ในไฟล์แล้วนำเข้ากลับเพื่ออัปเดต —
+          <span className="font-medium text-gray-500"> ห้ามแก้คอลัมน์ "รหัสใบสั่งซื้อ" และ "รหัสรายการ"</span> เพราะใช้จับคู่ข้อมูลเดิม
+          ใบสั่งซื้อที่รับสินค้าเข้าแล้วจะไม่สามารถแก้ไขผ่านไฟล์นี้ได้ (ให้ใช้ปุ่มสถานะการจ่ายเงินแทน)
+        </p>
+        {editImportMsg && <p className="text-xs text-blue-700">{editImportMsg}</p>}
       </div>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}

@@ -8,7 +8,7 @@ const PO_HEADER_MAP: Record<string, string> = {
   sku: "sku", "รหัสสินค้า": "sku", "รหัส": "sku",
   name: "name", "ชื่อสินค้า": "name", "ชื่อ": "name",
   unit_cost: "unit_cost", "ราคาทุนล่าสุด": "unit_cost", "ราคาทุน": "unit_cost", "ราคาทุนต่อหน่วย": "unit_cost",
-  qty: "qty", "จำนวน": "qty",
+  qty: "qty", "จำนวน": "qty", "จำนวนรับของ": "qty", "จำนวนสั่งซื้อ": "qty", "จำนวนที่สั่ง": "qty",
 };
 
 const PO_EDIT_HEADER_MAP: Record<string, string> = {
@@ -17,8 +17,10 @@ const PO_EDIT_HEADER_MAP: Record<string, string> = {
   invoice_no: "invoice_no", "เลขที่บิลผู้จัดจำหน่าย": "invoice_no",
   freight: "freight", "ค่าขนส่ง": "freight",
   note: "note", "หมายเหตุ": "note",
-  qty: "qty", "จำนวน": "qty",
-  unit_cost: "unit_cost", "ราคาทุนต่อหน่วย": "unit_cost",
+  sku: "sku", "รหัสสินค้า": "sku",
+  product_name: "product_name", "สินค้า": "product_name", "ชื่อสินค้า": "product_name",
+  qty: "qty", "จำนวน": "qty", "จำนวนรับของ": "qty", "จำนวนสั่งซื้อ": "qty", "จำนวนที่สั่ง": "qty",
+  unit_cost: "unit_cost", "ราคาทุนต่อหน่วย": "unit_cost", "ราคาทุน": "unit_cost",
 };
 
 interface SupplierOption {
@@ -354,6 +356,7 @@ export default function PurchaseOrdersClient({
     const rows: Record<string, any>[] = [];
     draftOrders.forEach((po) => {
       po.purchase_order_items.forEach((it) => {
+        const product = products.find((p) => p.id === it.product_id);
         rows.push({
           "รหัสใบสั่งซื้อ": po.id,
           "รหัสรายการ": it.id,
@@ -362,6 +365,7 @@ export default function PurchaseOrdersClient({
           "เลขที่บิลผู้จัดจำหน่าย": po.supplier_invoice_no ?? "",
           "ค่าขนส่ง": Number(po.freight_cost || 0),
           "หมายเหตุ": po.note ?? "",
+          "รหัสสินค้า": product?.sku ?? "",
           "สินค้า": oneName(it.products),
           "จำนวน": Number(it.qty),
           "ราคาทุนต่อหน่วย": Number(it.unit_cost),
@@ -399,11 +403,23 @@ export default function PurchaseOrdersClient({
           }
           return mapped;
         })
-        .filter((r) => String(r.po_id ?? "").trim() && String(r.item_id ?? "").trim());
+        .filter((r) => String(r.po_id ?? "").trim() && Number(r.qty) > 0);
 
       if (rows.length === 0) {
-        setEditImportMsg("ไม่พบข้อมูลที่ใช้ได้ในไฟล์ — ห้ามลบหรือแก้คอลัมน์ \"รหัสใบสั่งซื้อ\" และ \"รหัสรายการ\" เพราะใช้จับคู่ข้อมูลเดิม");
+        setEditImportMsg("ไม่พบข้อมูลที่ใช้ได้ในไฟล์ — ห้ามลบหรือแก้คอลัมน์ \"รหัสใบสั่งซื้อ\" และตรวจสอบว่าคอลัมน์ \"จำนวน\" มากกว่า 0");
         return;
+      }
+
+      function findProduct(sku: string, name: string) {
+        if (sku) {
+          const bySku = products.find((p) => (p.sku ?? "").trim().toLowerCase() === sku.toLowerCase());
+          if (bySku) return bySku;
+        }
+        if (name) {
+          const exact = products.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
+          if (exact) return exact;
+        }
+        return null;
       }
 
       interface EditGroup {
@@ -411,7 +427,7 @@ export default function PurchaseOrdersClient({
         invoice_no: string;
         freight: string;
         note: string;
-        items: { item_id: string; qty: number; unit_cost: number }[];
+        items: { item_id: string; sku: string; product_name: string; qty: number; unit_cost: number }[];
       }
       const groups = new Map<string, EditGroup>();
       rows.forEach((r) => {
@@ -426,7 +442,9 @@ export default function PurchaseOrdersClient({
           });
         }
         groups.get(poId)!.items.push({
-          item_id: String(r.item_id).trim(),
+          item_id: String(r.item_id ?? "").trim(),
+          sku: String(r.sku ?? "").trim(),
+          product_name: String(r.product_name ?? "").trim(),
           qty: Number(r.qty) || 0,
           unit_cost: Number(r.unit_cost) || 0,
         });
@@ -436,12 +454,21 @@ export default function PurchaseOrdersClient({
       const errors: string[] = [];
       for (const g of groups.values()) {
         try {
+          const items = g.items.map((it) => {
+            if (it.item_id) {
+              return { item_id: it.item_id, qty: it.qty, unit_cost: it.unit_cost };
+            }
+            // ไม่ระบุ "รหัสรายการ" = เพิ่มสินค้าใหม่เข้าใบสั่งซื้อนี้ จับคู่ด้วยรหัสสินค้า/ชื่อสินค้า
+            const product = findProduct(it.sku, it.product_name);
+            if (!product) throw new Error(`ไม่พบสินค้า "${it.sku || it.product_name}" สำหรับเพิ่มในใบสั่งซื้อ`);
+            return { item_id: null, product_id: product.id, qty: it.qty, unit_cost: it.unit_cost || product.cost_price };
+          });
           const { error: rpcError } = await supabase.rpc("update_draft_purchase_order", {
             p_po_id: g.po_id,
             p_supplier_invoice_no: g.invoice_no || null,
             p_freight_cost: Number(g.freight) || 0,
             p_note: g.note || null,
-            p_items: g.items,
+            p_items: items,
           });
           if (rpcError) throw rpcError;
           successCount++;
@@ -512,7 +539,8 @@ export default function PurchaseOrdersClient({
         </div>
         <p className="text-xs text-gray-400">
           ดาวน์โหลดได้เฉพาะใบสั่งซื้อที่ยังไม่รับสินค้าเข้า (สถานะรอรับสินค้า) แก้ไขจำนวน/ราคาทุน/เลขที่บิล/ค่าขนส่ง/หมายเหตุ ในไฟล์แล้วนำเข้ากลับเพื่ออัปเดต —
-          <span className="font-medium text-gray-500"> ห้ามแก้คอลัมน์ "รหัสใบสั่งซื้อ" และ "รหัสรายการ"</span> เพราะใช้จับคู่ข้อมูลเดิม
+          <span className="font-medium text-gray-500"> ห้ามแก้คอลัมน์ "รหัสใบสั่งซื้อ"</span> เพราะใช้จับคู่ว่าจะแก้ไบไหน
+          หากต้องการเพิ่มสินค้าใหม่เข้าใบเดิม ให้เพิ่มแถวใหม่ ใส่ "รหัสใบสั่งซื้อ" เดิม เว้น "รหัสรายการ" ว่างไว้ แล้วกรอกรหัสสินค้า/ชื่อสินค้า+จำนวน+ราคาทุน
           ใบสั่งซื้อที่รับสินค้าเข้าแล้วจะไม่สามารถแก้ไขผ่านไฟล์นี้ได้ (ให้ใช้ปุ่มสถานะการจ่ายเงินแทน)
         </p>
         {editImportMsg && <p className="text-xs text-blue-700">{editImportMsg}</p>}
@@ -597,6 +625,9 @@ export default function PurchaseOrdersClient({
             </label>
             {!supplierId && <span className="text-xs text-gray-400">กรุณาเลือกผู้จัดจำหน่ายก่อนดาวน์โหลด/นำเข้า</span>}
           </div>
+          <p className="text-xs text-gray-400">
+            รองรับไฟล์รายการสินค้าที่มีคอลัมน์ รหัสสินค้า/ชื่อสินค้า, ราคาทุน และคอลัมน์จำนวน (เช่น "จำนวน", "จำนวนรับของ", "จำนวนสั่งซื้อ") — ไม่ต้องใช้เทมเพลตด้านบนก็ได้ ถ้าไฟล์มีคอลัมน์เหล่านี้อยู่แล้ว
+          </p>
           {importMsg && <p className="text-xs text-blue-700">{importMsg}</p>}
 
           <div className="space-y-2">

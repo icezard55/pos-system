@@ -147,6 +147,8 @@ export type ExpenseCategory =
   | "main_food"
   | "dessert"
   | "platform_fee"
+  | "product_shipping"
+  | "personal"
   | "other";
 
 export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping" | "platform_fee">;
@@ -165,6 +167,8 @@ export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   main_food: "อาหารหลัก",
   dessert: "ของหวาน",
   platform_fee: "ค่าธรรมเนียมแพลตฟอร์ม",
+  product_shipping: "ขนส่งสินค้า",
+  personal: "รายจ่ายส่วนตัว",
   other: "อื่นๆ",
 };
 
@@ -180,6 +184,8 @@ export const RECURRING_EXPENSE_CATEGORIES: RecurringExpenseCategory[] = [
   "travel",
   "main_food",
   "dessert",
+  "product_shipping",
+  "personal",
   "other",
 ];
 

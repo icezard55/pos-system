@@ -10,7 +10,7 @@ interface PaymentRow {
   amount: string;
 }
 
-export default function PosClient({ products }: { products: Product[] }) {
+export default function PosClient({ products, showVatOnReceipt = true }: { products: Product[]; showVatOnReceipt?: boolean }) {
   const supabase = createClient();
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -38,6 +38,7 @@ export default function PosClient({ products }: { products: Product[] }) {
   const [channel, setChannel] = useState<SaleChannel>("store");
   const [platformNameOther, setPlatformNameOther] = useState("");
   const [platformFeePct, setPlatformFeePct] = useState("");
+  const [note, setNote] = useState("");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -183,6 +184,7 @@ export default function PosClient({ products }: { products: Product[] }) {
         p_channel: channel,
         p_platform_name: channel === "other" ? platformNameOther.trim() || null : null,
         p_platform_fee_pct: channel !== "store" && Number(platformFeePct) > 0 ? Number(platformFeePct) : null,
+        p_note: note.trim() || null,
       });
       if (error) throw error;
       const saleId = data?.[0]?.sale_id;
@@ -198,6 +200,7 @@ export default function PosClient({ products }: { products: Product[] }) {
       setChannel("store");
       setPlatformNameOther("");
       setPlatformFeePct("");
+      setNote("");
       if (saleId) router.push(`/receipt/${saleId}`);
     } catch (err: any) {
       setError(err.message ?? "บันทึกการขายไม่สำเร็จ");
@@ -396,6 +399,17 @@ export default function PosClient({ products }: { products: Product[] }) {
             <input type="number" min={0} value={billDiscount} onChange={(e) => setBillDiscount(e.target.value)} className="w-full rounded-lg border px-3 py-1.5 text-sm" />
           </div>
 
+          <div>
+            <label className="mb-1 block text-xs text-gray-600">หมายเหตุ (เก็บภายในเท่านั้น ไม่แสดงบนใบเสร็จ)</label>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="เช่น ลูกค้าขอเปลี่ยนสี, นัดมารับของพรุ่งนี้..."
+              rows={2}
+              className="w-full rounded-lg border px-3 py-1.5 text-sm"
+            />
+          </div>
+
           {/* payment */}
           <div className="flex items-center justify-between">
             <label className="text-xs text-gray-600">วิธีชำระเงิน</label>
@@ -466,10 +480,12 @@ export default function PosClient({ products }: { products: Product[] }) {
             <span>สุทธิ</span>
             <span>฿{total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
           </div>
-          <div className="flex justify-between text-xs text-gray-400">
-            <span>ในนี้เป็น VAT 7% (รวมในราคาแล้ว)</span>
-            <span>฿{vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })} (ก่อน VAT ฿{vatBase.toLocaleString("th-TH", { minimumFractionDigits: 2 })})</span>
-          </div>
+          {showVatOnReceipt && (
+            <div className="flex justify-between text-xs text-gray-400">
+              <span>ในนี้เป็น VAT 7% (รวมในราคาแล้ว)</span>
+              <span>฿{vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })} (ก่อน VAT ฿{vatBase.toLocaleString("th-TH", { minimumFractionDigits: 2 })})</span>
+            </div>
+          )}
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 

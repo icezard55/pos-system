@@ -148,6 +148,74 @@ function ProductAutocomplete({
   );
 }
 
+function SupplierAutocomplete({
+  suppliers,
+  value,
+  onSelect,
+}: {
+  suppliers: SupplierOption[];
+  value: string;
+  onSelect: (id: string) => void;
+}) {
+  const [query, setQuery] = useState(() => suppliers.find((s) => s.id === value)?.name ?? "");
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setQuery(suppliers.find((s) => s.id === value)?.name ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = (q ? suppliers.filter((s) => s.name.toLowerCase().includes(q)) : suppliers).slice(0, 30);
+
+  return (
+    <div className="relative">
+      <input
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+          if (e.target.value.trim() === "") onSelect("");
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="พิมพ์ชื่อผู้จัดจำหน่ายเพื่อค้นหา..."
+        className="w-full rounded-lg border px-3 py-2 text-sm"
+      />
+      {open && (
+        <div className="absolute z-10 mt-1 max-h-56 w-full overflow-auto rounded-lg border bg-white shadow-lg">
+          <button
+            type="button"
+            onMouseDown={() => {
+              onSelect("");
+              setQuery("");
+              setOpen(false);
+            }}
+            className="block w-full px-3 py-1.5 text-left text-sm text-gray-400 hover:bg-gray-50"
+          >
+            - ไม่ระบุ -
+          </button>
+          {filtered.length === 0 && <p className="px-3 py-2 text-xs text-gray-400">ไม่พบผู้จัดจำหน่าย</p>}
+          {filtered.map((s) => (
+            <button
+              type="button"
+              key={s.id}
+              onMouseDown={() => {
+                onSelect(s.id);
+                setQuery(s.name);
+                setOpen(false);
+              }}
+              className="block w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50"
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PurchaseOrdersClient({
   suppliers,
   products,
@@ -490,6 +558,21 @@ export default function PurchaseOrdersClient({
     }
   }
 
+  async function handleCancel(po: PO) {
+    if (!confirm(`ยืนยันยกเลิกใบสั่งซื้อนี้? (ยกเลิกได้เฉพาะใบที่ยังไม่รับสินค้าเข้า)`)) return;
+    setReceivingId(po.id);
+    setError(null);
+    try {
+      const { error } = await supabase.rpc("cancel_purchase_order", { p_po_id: po.id });
+      if (error) throw error;
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? "ยกเลิกใบสั่งซื้อไม่สำเร็จ");
+    } finally {
+      setReceivingId(null);
+    }
+  }
+
   async function handlePaymentStatus(po: PO, status: PaymentStatus) {
     if (status === "paid" && !confirm(`ยืนยันว่าจ่ายเงินให้ผู้จัดจำหน่ายรายนี้ครบแล้ว?`)) return;
     setPayingId(po.id);
@@ -574,12 +657,7 @@ export default function PurchaseOrdersClient({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">ผู้จัดจำหน่าย</label>
-              <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm">
-                <option value="">- ไม่ระบุ -</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <SupplierAutocomplete suppliers={suppliers} value={supplierId} onSelect={setSupplierId} />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">เลขที่บิล/ใบกำกับของผู้จัดจำหน่าย</label>
@@ -651,7 +729,7 @@ export default function PurchaseOrdersClient({
                   className="w-24 rounded-lg border px-2 py-1.5 text-sm"
                 />
                 <input
-                  type="number" min={0} placeholder="ราคาทุน/หน่วย"
+                  type="number" min={0} step="0.01" placeholder="ราคาทุน/หน่วย"
                   value={l.unitCost} onChange={(e) => updateLine(idx, { unitCost: e.target.value })}
                   className="w-28 rounded-lg border px-2 py-1.5 text-sm"
                 />
@@ -698,6 +776,9 @@ export default function PurchaseOrdersClient({
                     {paymentLabel[po.payment_status]}
                   </span>
                 )}
+                {po.status === "cancelled" && (
+                  <span className="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">ยกเลิกแล้ว</span>
+                )}
                 {po.status === "draft" && (
                   <button
                     onClick={() => handleReceive(po)}
@@ -705,6 +786,15 @@ export default function PurchaseOrdersClient({
                     className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
                   >
                     {receivingId === po.id ? "กำลังรับ..." : "รับสินค้าเข้า"}
+                  </button>
+                )}
+                {po.status === "draft" && (
+                  <button
+                    onClick={() => handleCancel(po)}
+                    disabled={receivingId === po.id}
+                    className="rounded-lg border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                  >
+                    ยกเลิกใบสั่งซื้อ
                   </button>
                 )}
                 {po.status === "received" && po.payment_status !== "paid" && (

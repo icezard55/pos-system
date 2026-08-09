@@ -25,9 +25,17 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm());
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const categories = useMemo(() => {
+    return Array.from(new Set(products.map((p) => (p.category ?? "").trim()).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b, "th")
+    );
+  }, [products]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -44,6 +52,8 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
 
   function openAdd() {
     setForm(emptyForm());
+    setAddingCategory(false);
+    setNewCategory("");
     setShowModal(true);
   }
 
@@ -53,6 +63,8 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       cost_price: String(p.cost_price), sell_price: String(p.sell_price),
       stock_qty: String(p.stock_qty), low_stock_threshold: String(p.low_stock_threshold),
     });
+    setAddingCategory(false);
+    setNewCategory("");
     setShowModal(true);
   }
 
@@ -261,7 +273,49 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">หมวดหมู่</label>
-                <input className="w-full rounded-lg border px-3 py-2 text-sm" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
+                {addingCategory ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      autoFocus
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      placeholder="ชื่อหมวดหมู่ใหม่"
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      onBlur={() => {
+                        if (newCategory.trim()) setForm((f) => ({ ...f, category: newCategory.trim() }));
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (newCategory.trim()) setForm((f) => ({ ...f, category: newCategory.trim() }));
+                        setAddingCategory(false);
+                      }}
+                      className="whitespace-nowrap rounded-lg border px-2 py-2 text-xs hover:bg-gray-50"
+                    >
+                      ✓ ตกลง
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    value={form.category}
+                    onChange={(e) => {
+                      if (e.target.value === "__new__") {
+                        setNewCategory("");
+                        setAddingCategory(true);
+                      } else {
+                        setForm({ ...form, category: e.target.value });
+                      }
+                    }}
+                  >
+                    <option value="">- ไม่ระบุหมวดหมู่ -</option>
+                    {categories.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                    <option value="__new__">+ เพิ่มหมวดหมู่ใหม่...</option>
+                  </select>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">หน่วยนับ</label>

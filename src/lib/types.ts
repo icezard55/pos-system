@@ -64,6 +64,7 @@ export interface Sale {
   platform_fee_amount: number;
   payment_status: "unpaid" | "paid";
   received_at: string | null;
+  note: string | null;
 }
 
 export const SALE_PAYMENT_STATUS_LABEL: Record<"unpaid" | "paid", string> = {
@@ -224,6 +225,7 @@ export interface ShopSettings {
   phone: string | null;
   low_stock_webhook_url: string | null;
   baht_per_point: number;
+  show_vat_on_receipt: boolean;
   updated_at: string;
 }
 

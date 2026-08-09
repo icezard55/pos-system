@@ -94,17 +94,19 @@ export default function ReceiptClient({
             </div>
           )}
         </div>
-        <div className="mt-2 space-y-0.5 border-t border-dashed pt-2 text-xs text-gray-500">
-          <div className="flex justify-between">
-            <span>มูลค่าสินค้า (ไม่รวม VAT)</span>
-            <span>฿{base.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+        {shopSettings?.show_vat_on_receipt !== false && (
+          <div className="mt-2 space-y-0.5 border-t border-dashed pt-2 text-xs text-gray-500">
+            <div className="flex justify-between">
+              <span>มูลค่าสินค้า (ไม่รวม VAT)</span>
+              <span>฿{base.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>ภาษีมูลค่าเพิ่ม (VAT 7%)</span>
+              <span>฿{vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+            </div>
+            <p className="pt-1 text-center text-[10px] text-gray-400">(ราคาสินค้ารวมภาษีมูลค่าเพิ่มแล้ว)</p>
           </div>
-          <div className="flex justify-between">
-            <span>ภาษีมูลค่าเพิ่ม (VAT 7%)</span>
-            <span>฿{vat.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
-          </div>
-          <p className="pt-1 text-center text-[10px] text-gray-400">(ราคาสินค้ารวมภาษีมูลค่าเพิ่มแล้ว)</p>
-        </div>
+        )}
         <p className="mt-4 text-center text-xs text-gray-400">ขอบคุณที่ใช้บริการ</p>
 
         <div className="no-print mt-6 flex gap-2">

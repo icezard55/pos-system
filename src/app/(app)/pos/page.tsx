@@ -9,5 +9,7 @@ export default async function PosPage() {
     .eq("is_active", true)
     .order("name");
 
-  return <PosClient products={products ?? []} />;
+  const { data: shopSettings } = await supabase.from("shop_settings").select("*").single();
+
+  return <PosClient products={products ?? []} showVatOnReceipt={shopSettings?.show_vat_on_receipt ?? true} />;
 }

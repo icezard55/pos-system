@@ -66,6 +66,7 @@ interface AccountsReceivableRow {
   total: number;
   platform_fee_amount: number;
   customer_name: string | null;
+  cost_total: number;
 }
 
 function oneName(v: { name: string; unit?: string } | { name: string; unit?: string }[] | null): string {
@@ -97,6 +98,8 @@ export default function ReportsClient({
   grandProfit,
   dayRows,
   topProducts,
+  allProductSales,
+  categoryRows,
   sales,
   startDate,
   endDate,
@@ -111,6 +114,8 @@ export default function ReportsClient({
   grandProfit: number;
   dayRows: [string, { total: number; profit: number }][];
   topProducts: [string, { qty: number; total: number; profit: number }][];
+  allProductSales: [string, { qty: number; total: number; profit: number }][];
+  categoryRows: [string, { qty: number; total: number; profit: number }][];
   sales: SaleRow[];
   startDate: string;
   endDate: string;
@@ -125,6 +130,7 @@ export default function ReportsClient({
   const [start, setStart] = useState(startDate);
   const [end, setEnd] = useState(endDate);
   const [tab, setTab] = useState<Tab>("sales");
+  const [selectedProduct, setSelectedProduct] = useState("");
 
   function applyRange() {
     router.push(`/reports?start=${start}&end=${end}`);
@@ -177,6 +183,16 @@ export default function ReportsClient({
       }))
     );
     XLSX.utils.book_append_sheet(wb, productSheet, "สินค้าขายดี");
+
+    const categorySheet = XLSX.utils.json_to_sheet(
+      categoryRows.map(([cat, v]) => ({
+        หมวดหมู่: cat,
+        จำนวนที่ขาย: v.qty,
+        ยอดขาย: Number(v.total.toFixed(2)),
+        กำไรขั้นต้น: Number(v.profit.toFixed(2)),
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, categorySheet, "ยอดขายตามหมวดหมู่");
 
     const salesSheet = XLSX.utils.json_to_sheet(
       sales.map((s) => ({
@@ -243,11 +259,14 @@ export default function ReportsClient({
     const receivableSheet = XLSX.utils.json_to_sheet(
       accountsReceivable.map((r) => ({
         เลขที่บิล: r.sale_no,
+        ลูกค้า: r.customer_name ?? "-",
         ช่องทาง: r.channel === "other" ? (r.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[r.channel],
         วันที่ขาย: new Date(r.created_at).toLocaleString("th-TH"),
         ยอดขาย: Number(Number(r.total).toFixed(2)),
+        ต้นทุนสินค้า: Number(Number(r.cost_total).toFixed(2)),
         ค่าธรรมเนียมแพลตฟอร์ม: Number(Number(r.platform_fee_amount).toFixed(2)),
         คาดว่าจะได้รับสุทธิ: Number((Number(r.total) - Number(r.platform_fee_amount)).toFixed(2)),
+        กำไรหลังหักค่าธรรมเนียม: Number((Number(r.total) - Number(r.cost_total) - Number(r.platform_fee_amount)).toFixed(2)),
         ค้างมาแล้ว_วัน: daysOutstanding(r.created_at),
       }))
     );
@@ -374,6 +393,65 @@ export default function ReportsClient({
                   {topProducts.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-gray-400">ไม่มีข้อมูล</td></tr>}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="rounded-2xl bg-white p-6 shadow-sm">
+              <h2 className="mb-4 font-semibold">ยอดขายแยกตามหมวดหมู่สินค้า</h2>
+              <table className="w-full text-sm">
+                <thead><tr className="border-b text-left text-gray-500"><th className="py-2">หมวดหมู่</th><th className="py-2 text-right">จำนวน</th><th className="py-2 text-right">ยอดขาย</th><th className="py-2 text-right">กำไร</th></tr></thead>
+                <tbody>
+                  {categoryRows.map(([cat, v]) => (
+                    <tr key={cat} className="border-b last:border-0">
+                      <td className="py-2">{cat}</td>
+                      <td className="py-2 text-right">{v.qty}</td>
+                      <td className="py-2 text-right font-medium">฿{v.total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                      <td className="py-2 text-right text-green-600">฿{v.profit.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                    </tr>
+                  ))}
+                  {categoryRows.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-gray-400">ไม่มีข้อมูล</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="rounded-2xl bg-white p-6 shadow-sm">
+              <h2 className="mb-3 font-semibold">ดูยอดขาย/กำไรของสินค้ารายตัว</h2>
+              <select
+                value={selectedProduct}
+                onChange={(e) => setSelectedProduct(e.target.value)}
+                className="mb-4 w-full rounded-lg border px-3 py-2 text-sm"
+              >
+                <option value="">- เลือกสินค้า -</option>
+                {allProductSales.map(([name]) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              {selectedProduct ? (
+                (() => {
+                  const found = allProductSales.find(([name]) => name === selectedProduct);
+                  if (!found) return <p className="text-sm text-gray-400">ไม่มีข้อมูลการขายของสินค้านี้ในช่วงที่เลือก</p>;
+                  const [, v] = found;
+                  return (
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">จำนวนที่ขาย</p>
+                        <p className="mt-1 text-lg font-bold text-gray-800">{v.qty}</p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">ยอดขาย</p>
+                        <p className="mt-1 text-lg font-bold text-brand">฿{v.total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">กำไรขั้นต้น</p>
+                        <p className="mt-1 text-lg font-bold text-green-600">฿{v.profit.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <p className="text-sm text-gray-400">เลือกสินค้าเพื่อดูยอดขายและกำไรขั้นต้นในช่วงวันที่ที่เลือกไว้ด้านบน</p>
+              )}
             </div>
           </div>
         </>
@@ -537,31 +615,40 @@ export default function ReportsClient({
             <thead>
               <tr className="border-b text-left text-gray-500">
                 <th className="py-2">เลขที่บิล</th>
+                <th className="py-2">ลูกค้า</th>
                 <th className="py-2">ช่องทาง</th>
                 <th className="py-2">วันที่ขาย</th>
                 <th className="py-2 text-right">ค้างมาแล้ว</th>
                 <th className="py-2 text-right">ยอดขาย</th>
                 <th className="py-2 text-right">ค่าธรรมเนียม</th>
                 <th className="py-2 text-right">คาดว่าจะได้รับสุทธิ</th>
+                <th className="py-2 text-right">กำไรหลังหักค่าธรรมเนียม</th>
               </tr>
             </thead>
             <tbody>
-              {accountsReceivable.map((r) => (
-                <tr key={r.id} className="border-b last:border-0">
-                  <td className="py-2">{r.sale_no}</td>
-                  <td className="py-2 text-gray-500">
-                    {r.channel === "other" ? (r.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[r.channel]}
-                  </td>
-                  <td className="py-2 text-gray-500">{new Date(r.created_at).toLocaleDateString("th-TH")}</td>
-                  <td className="py-2 text-right text-gray-500">{daysOutstanding(r.created_at)} วัน</td>
-                  <td className="py-2 text-right font-medium">฿{Number(r.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                  <td className="py-2 text-right text-red-500">-฿{Number(r.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                  <td className="py-2 text-right font-semibold text-amber-600">
-                    ฿{(Number(r.total) - Number(r.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              ))}
-              {accountsReceivable.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-gray-400">ไม่มียอดขายแพลตฟอร์มที่รอรับเงิน 🎉</td></tr>}
+              {accountsReceivable.map((r) => {
+                const profitAfterFee = Number(r.total) - Number(r.cost_total) - Number(r.platform_fee_amount);
+                return (
+                  <tr key={r.id} className="border-b last:border-0">
+                    <td className="py-2">{r.sale_no}</td>
+                    <td className="py-2 text-gray-500">{r.customer_name ?? "-"}</td>
+                    <td className="py-2 text-gray-500">
+                      {r.channel === "other" ? (r.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[r.channel]}
+                    </td>
+                    <td className="py-2 text-gray-500">{new Date(r.created_at).toLocaleDateString("th-TH")}</td>
+                    <td className="py-2 text-right text-gray-500">{daysOutstanding(r.created_at)} วัน</td>
+                    <td className="py-2 text-right font-medium">฿{Number(r.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 text-right text-red-500">-฿{Number(r.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 text-right font-semibold text-amber-600">
+                      ฿{(Number(r.total) - Number(r.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className={`py-2 text-right font-semibold ${profitAfterFee >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      ฿{profitAfterFee.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                );
+              })}
+              {accountsReceivable.length === 0 && <tr><td colSpan={9} className="py-6 text-center text-gray-400">ไม่มียอดขายแพลตฟอร์มที่รอรับเงิน 🎉</td></tr>}
             </tbody>
           </table>
           <p className="mt-3 text-xs text-gray-400">

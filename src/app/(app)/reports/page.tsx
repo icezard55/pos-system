@@ -32,10 +32,16 @@ export default async function ReportsPage({
 
   const { data: items } = await supabase
     .from("sale_items")
-    .select("product_name, qty, line_total, cost_price, sale_id, sales!inner(created_at, status)")
+    .select("product_name, product_id, qty, line_total, cost_price, sale_id, sales!inner(created_at, status)")
     .gte("sales.created_at", startDate.toISOString())
     .lte("sales.created_at", endDate.toISOString())
     .eq("sales.status", "completed");
+
+  const { data: productCategoryRows } = await supabase.from("products").select("id, category");
+  const categoryMap: Record<string, string> = {};
+  (productCategoryRows ?? []).forEach((p) => {
+    categoryMap[p.id] = p.category?.trim() || "ไม่ระบุหมวดหมู่";
+  });
 
   const { data: receivedPOs } = await supabase
     .from("purchase_orders")
@@ -77,6 +83,7 @@ export default async function ReportsPage({
   const dayRows = Object.entries(byDay).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 
   const byProduct: Record<string, { qty: number; total: number; profit: number }> = {};
+  const byCategory: Record<string, { qty: number; total: number; profit: number }> = {};
   let totalCost = 0;
   (items ?? []).forEach((it: any) => {
     if (!byProduct[it.product_name]) byProduct[it.product_name] = { qty: 0, total: 0, profit: 0 };
@@ -86,10 +93,18 @@ export default async function ReportsPage({
     byProduct[it.product_name].total += Number(it.line_total);
     byProduct[it.product_name].profit += lineProfit;
     totalCost += lineCost;
+
+    const category = it.product_id ? categoryMap[it.product_id] ?? "ไม่ระบุหมวดหมู่" : "ไม่ระบุหมวดหมู่";
+    if (!byCategory[category]) byCategory[category] = { qty: 0, total: 0, profit: 0 };
+    byCategory[category].qty += Number(it.qty);
+    byCategory[category].total += Number(it.line_total);
+    byCategory[category].profit += lineProfit;
   });
   const topProducts = Object.entries(byProduct)
     .sort((a, b) => b[1].total - a[1].total)
     .slice(0, 10);
+  const allProductSales = Object.entries(byProduct).sort((a, b) => a[0].localeCompare(b[0], "th"));
+  const categoryRows = Object.entries(byCategory).sort((a, b) => b[1].total - a[1].total);
 
   const grandTotal = (sales ?? []).reduce((s, r) => s + Number(r.total), 0);
   const grandProfit = grandTotal - totalCost;
@@ -100,6 +115,8 @@ export default async function ReportsPage({
       grandProfit={grandProfit}
       dayRows={dayRows}
       topProducts={topProducts}
+      allProductSales={allProductSales}
+      categoryRows={categoryRows}
       sales={sales ?? []}
       startDate={toISODate(startDate)}
       endDate={toISODate(endDate)}

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -9,6 +9,73 @@ interface ProductOption {
   name: string;
   unit: string;
   stock_qty: number;
+}
+
+function productLabel(p: ProductOption | undefined): string {
+  if (!p) return "";
+  return p.sku ? `[${p.sku}] ${p.name}` : p.name;
+}
+
+function ProductAutocomplete({
+  products,
+  value,
+  onSelect,
+}: {
+  products: ProductOption[];
+  value: string;
+  onSelect: (id: string) => void;
+}) {
+  const [query, setQuery] = useState(() => productLabel(products.find((p) => p.id === value)));
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    setQuery(productLabel(products.find((p) => p.id === value)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return products.slice(0, 30);
+    return products
+      .filter((p) => `${p.sku ?? ""} ${p.name}`.toLowerCase().includes(q))
+      .slice(0, 30);
+  }, [products, query]);
+
+  return (
+    <div className="relative">
+      <input
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="พิมพ์รหัสหรือชื่อสินค้าเพื่อค้นหา..."
+        className="w-full rounded-lg border px-3 py-2 text-sm"
+      />
+      {open && (
+        <div className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-lg border bg-white shadow-lg">
+          {filtered.length === 0 && <p className="px-3 py-2 text-xs text-gray-400">ไม่พบสินค้า</p>}
+          {filtered.map((p) => (
+            <button
+              type="button"
+              key={p.id}
+              onMouseDown={() => {
+                onSelect(p.id);
+                setQuery(productLabel(p));
+                setOpen(false);
+              }}
+              className="block w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50"
+            >
+              {productLabel(p)}
+              <span className="ml-1 text-xs text-gray-400">(คงเหลือ {p.stock_qty} {p.unit})</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface Movement {
@@ -81,17 +148,7 @@ export default function StockAdjustmentsClient({
       <form onSubmit={handleSubmit} className="mb-8 grid gap-4 rounded-2xl bg-white p-6 shadow-sm sm:grid-cols-2">
         <div>
           <label className="mb-1 block text-sm font-medium text-gray-700">สินค้า</label>
-          <select
-            value={productId}
-            onChange={(e) => setProductId(e.target.value)}
-            className="w-full rounded-lg border px-3 py-2 text-sm"
-          >
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.sku ? `[${p.sku}] ` : ""}{p.name} (คงเหลือ {p.stock_qty} {p.unit})
-              </option>
-            ))}
-          </select>
+          <ProductAutocomplete products={products} value={productId} onSelect={setProductId} />
         </div>
 
         <div>

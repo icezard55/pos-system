@@ -131,10 +131,14 @@ export default function ReportsClient({
   const [end, setEnd] = useState(endDate);
   const [tab, setTab] = useState<Tab>("sales");
   const [selectedProduct, setSelectedProduct] = useState("");
-  const [selectedSupplier, setSelectedSupplier] = useState("");
+  const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([]);
 
   function applyRange() {
     router.push(`/reports?start=${start}&end=${end}`);
+  }
+
+  function toggleSupplier(name: string) {
+    setSelectedSuppliers((prev) => (prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]));
   }
 
   const receivingTotal = receivedPOs.reduce(
@@ -155,13 +159,16 @@ export default function ReportsClient({
     });
     return Object.entries(map).sort((a, b) => b[1].total - a[1].total);
   })();
-  const filteredReceivedPOs = selectedSupplier
-    ? receivedPOs.filter((po) => oneName(po.suppliers) === selectedSupplier)
+  const filteredReceivedPOs = selectedSuppliers.length
+    ? receivedPOs.filter((po) => selectedSuppliers.includes(oneName(po.suppliers)))
     : receivedPOs;
   const filteredReceivingTotal = filteredReceivedPOs.reduce(
     (sum, po) => sum + po.purchase_order_items.reduce((s, it) => s + Number(it.qty) * Number(it.unit_cost), 0),
     0
   );
+  const visibleSupplierSummary = selectedSuppliers.length
+    ? supplierSummary.filter(([name]) => selectedSuppliers.includes(name))
+    : supplierSummary;
   const stockValueTotal = stockValuation.reduce((s, p) => s + Number(p.stock_qty) * Number(p.cost_price), 0);
   const payableTotal = accountsPayable.reduce((s, po) => s + Number(po.po_total), 0);
   const receivableTotal = accountsReceivable.reduce((s, r) => s + Number(r.total), 0);
@@ -491,9 +498,43 @@ export default function ReportsClient({
       {tab === "receiving" && (
         <div className="space-y-6">
           <div className="rounded-2xl bg-white p-6 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-semibold">เลือกผู้จัดจำหน่ายที่ต้องการแสดงผล</h2>
+              {selectedSuppliers.length > 0 && (
+                <button onClick={() => setSelectedSuppliers([])} className="text-xs text-brand hover:underline">
+                  ล้างตัวกรอง (แสดงทุกราย)
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {supplierNames.map((name) => {
+                const active = selectedSuppliers.includes(name);
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => toggleSupplier(name)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
+                      active ? "border-brand bg-brand text-white" : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {name}
+                  </button>
+                );
+              })}
+              {supplierNames.length === 0 && <p className="text-sm text-gray-400">ยังไม่มีผู้จัดจำหน่ายที่รับสินค้าเข้าในช่วงนี้</p>}
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              {selectedSuppliers.length === 0
+                ? "ยังไม่ได้เลือก — กำลังแสดงทุกผู้จัดจำหน่าย"
+                : `กำลังแสดงเฉพาะ: ${selectedSuppliers.join(", ")}`}
+            </p>
+          </div>
+
+          <div className="rounded-2xl bg-white p-6 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold">สรุปยอดซื้อแยกตามผู้จัดจำหน่าย ({startDate} ถึง {endDate})</h2>
-              <p className="text-sm text-gray-500">รวมทั้งหมด <span className="font-bold text-brand">฿{receivingTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></p>
+              <p className="text-sm text-gray-500">รวมที่แสดง <span className="font-bold text-brand">฿{filteredReceivingTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></p>
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -504,34 +545,21 @@ export default function ReportsClient({
                 </tr>
               </thead>
               <tbody>
-                {supplierSummary.map(([name, v]) => (
+                {visibleSupplierSummary.map(([name, v]) => (
                   <tr key={name} className="border-b last:border-0">
                     <td className="py-2">{name}</td>
                     <td className="py-2 text-right">{v.count}</td>
                     <td className="py-2 text-right font-medium">฿{v.total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                   </tr>
                 ))}
-                {supplierSummary.length === 0 && <tr><td colSpan={3} className="py-6 text-center text-gray-400">ไม่มีข้อมูล</td></tr>}
+                {visibleSupplierSummary.length === 0 && <tr><td colSpan={3} className="py-6 text-center text-gray-400">ไม่มีข้อมูล</td></tr>}
               </tbody>
             </table>
           </div>
 
           <div className="rounded-2xl bg-white p-6 shadow-sm">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold">การรับสินค้าเข้า ({startDate} ถึง {endDate})</h2>
-            <div className="flex items-center gap-2">
-              <select
-                value={selectedSupplier}
-                onChange={(e) => setSelectedSupplier(e.target.value)}
-                className="rounded-lg border px-3 py-1.5 text-sm"
-              >
-                <option value="">ทุกผู้จัดจำหน่าย</option>
-                {supplierNames.map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <p className="text-sm text-gray-500">มูลค่ารวม <span className="font-bold text-brand">฿{filteredReceivingTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></p>
-            </div>
+            <h2 className="font-semibold">รายการรับสินค้าเข้า ({startDate} ถึง {endDate})</h2>
           </div>
           {filteredReceivedPOs.length === 0 ? (
             <p className="py-6 text-center text-sm text-gray-400">ไม่มีการรับสินค้าเข้าในช่วงนี้</p>

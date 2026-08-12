@@ -131,12 +131,34 @@ export default function ReportsClient({
   const [end, setEnd] = useState(endDate);
   const [tab, setTab] = useState<Tab>("sales");
   const [selectedProduct, setSelectedProduct] = useState("");
+  const [selectedSupplier, setSelectedSupplier] = useState("");
 
   function applyRange() {
     router.push(`/reports?start=${start}&end=${end}`);
   }
 
   const receivingTotal = receivedPOs.reduce(
+    (sum, po) => sum + po.purchase_order_items.reduce((s, it) => s + Number(it.qty) * Number(it.unit_cost), 0),
+    0
+  );
+  const supplierNames = Array.from(new Set(receivedPOs.map((po) => oneName(po.suppliers)).filter((n) => n !== "-"))).sort(
+    (a, b) => a.localeCompare(b, "th")
+  );
+  const supplierSummary = (() => {
+    const map: Record<string, { count: number; total: number }> = {};
+    receivedPOs.forEach((po) => {
+      const name = oneName(po.suppliers);
+      const poTotal = po.purchase_order_items.reduce((s, it) => s + Number(it.qty) * Number(it.unit_cost), 0);
+      if (!map[name]) map[name] = { count: 0, total: 0 };
+      map[name].count += 1;
+      map[name].total += poTotal;
+    });
+    return Object.entries(map).sort((a, b) => b[1].total - a[1].total);
+  })();
+  const filteredReceivedPOs = selectedSupplier
+    ? receivedPOs.filter((po) => oneName(po.suppliers) === selectedSupplier)
+    : receivedPOs;
+  const filteredReceivingTotal = filteredReceivedPOs.reduce(
     (sum, po) => sum + po.purchase_order_items.reduce((s, it) => s + Number(it.qty) * Number(it.unit_cost), 0),
     0
   );
@@ -221,6 +243,15 @@ export default function ReportsClient({
       });
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(receivingRows), "การรับสินค้า");
+
+    const supplierSummarySheet = XLSX.utils.json_to_sheet(
+      supplierSummary.map(([name, v]) => ({
+        ผู้จัดจำหน่าย: name,
+        จำนวนใบที่รับเข้า: v.count,
+        ยอดซื้อรวม: Number(v.total.toFixed(2)),
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, supplierSummarySheet, "สรุปยอดซื้อตามผู้จัดจำหน่าย");
 
     const stockCostSheet = XLSX.utils.json_to_sheet(
       stockValuation.map((p) => ({
@@ -458,16 +489,55 @@ export default function ReportsClient({
       )}
 
       {tab === "receiving" && (
-        <div className="rounded-2xl bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold">การรับสินค้าเข้า ({startDate} ถึง {endDate})</h2>
-            <p className="text-sm text-gray-500">มูลค่ารวม <span className="font-bold text-brand">฿{receivingTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></p>
+        <div className="space-y-6">
+          <div className="rounded-2xl bg-white p-6 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="font-semibold">สรุปยอดซื้อแยกตามผู้จัดจำหน่าย ({startDate} ถึง {endDate})</h2>
+              <p className="text-sm text-gray-500">รวมทั้งหมด <span className="font-bold text-brand">฿{receivingTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></p>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-gray-500">
+                  <th className="py-2">ผู้จัดจำหน่าย</th>
+                  <th className="py-2 text-right">จำนวนใบที่รับเข้า</th>
+                  <th className="py-2 text-right">ยอดซื้อรวม</th>
+                </tr>
+              </thead>
+              <tbody>
+                {supplierSummary.map(([name, v]) => (
+                  <tr key={name} className="border-b last:border-0">
+                    <td className="py-2">{name}</td>
+                    <td className="py-2 text-right">{v.count}</td>
+                    <td className="py-2 text-right font-medium">฿{v.total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
+                {supplierSummary.length === 0 && <tr><td colSpan={3} className="py-6 text-center text-gray-400">ไม่มีข้อมูล</td></tr>}
+              </tbody>
+            </table>
           </div>
-          {receivedPOs.length === 0 ? (
+
+          <div className="rounded-2xl bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold">การรับสินค้าเข้า ({startDate} ถึง {endDate})</h2>
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedSupplier}
+                onChange={(e) => setSelectedSupplier(e.target.value)}
+                className="rounded-lg border px-3 py-1.5 text-sm"
+              >
+                <option value="">ทุกผู้จัดจำหน่าย</option>
+                {supplierNames.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <p className="text-sm text-gray-500">มูลค่ารวม <span className="font-bold text-brand">฿{filteredReceivingTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span></p>
+            </div>
+          </div>
+          {filteredReceivedPOs.length === 0 ? (
             <p className="py-6 text-center text-sm text-gray-400">ไม่มีการรับสินค้าเข้าในช่วงนี้</p>
           ) : (
             <div className="space-y-4">
-              {receivedPOs.map((po) => {
+              {filteredReceivedPOs.map((po) => {
                 const poTotal = po.purchase_order_items.reduce((s, it) => s + Number(it.qty) * Number(it.unit_cost), 0);
                 return (
                   <div key={po.id} className="rounded-xl border p-4">
@@ -495,6 +565,7 @@ export default function ReportsClient({
               })}
             </div>
           )}
+          </div>
         </div>
       )}
 

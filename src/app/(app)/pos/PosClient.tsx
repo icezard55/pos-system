@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { CartLine, Customer, PaymentMethod, Product, SaleChannel } from "@/lib/types";
-import { splitVat, SALE_CHANNEL_LABEL } from "@/lib/types";
+import { splitVat, SALE_CHANNEL_LABEL, MANUAL_SALE_CHANNELS } from "@/lib/types";
 
 interface PaymentRow {
   method: PaymentMethod;
@@ -353,7 +353,7 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
               onChange={(e) => setChannel(e.target.value as SaleChannel)}
               className="w-full rounded-lg border px-3 py-1.5 text-sm"
             >
-              {(Object.keys(SALE_CHANNEL_LABEL) as SaleChannel[]).map((c) => (
+              {MANUAL_SALE_CHANNELS.map((c) => (
                 <option key={c} value={c}>{SALE_CHANNEL_LABEL[c]}</option>
               ))}
             </select>

@@ -18,6 +18,7 @@ export interface Product {
   stock_qty: number;
   low_stock_threshold: number;
   is_active: boolean;
+  image_url: string | null;
 }
 
 export interface SaleItem {
@@ -32,15 +33,19 @@ export interface SaleItem {
   cost_price: number;
 }
 
-export type SaleChannel = "store" | "shopee" | "lazada" | "tiktok" | "other";
+export type SaleChannel = "store" | "shopee" | "lazada" | "tiktok" | "online_store" | "other";
 
 export const SALE_CHANNEL_LABEL: Record<SaleChannel, string> = {
   store: "หน้าร้าน",
   shopee: "Shopee",
   lazada: "Lazada",
   tiktok: "TikTok Shop",
+  online_store: "ร้านค้าออนไลน์",
   other: "แพลตฟอร์มอื่น",
 };
+
+// channels a cashier can pick manually at POS — online_store is set only via confirm_online_order
+export const MANUAL_SALE_CHANNELS: SaleChannel[] = ["store", "shopee", "lazada", "tiktok", "other"];
 
 export interface Sale {
   id: string;
@@ -273,4 +278,88 @@ export function splitVat(totalIncludingVat: number) {
   const base = totalIncludingVat / (1 + VAT_RATE);
   const vat = totalIncludingVat - base;
   return { base, vat };
+}
+
+// ---- ร้านค้าออนไลน์ (storefront) ----
+
+export interface StorefrontProduct {
+  id: string;
+  name: string;
+  category: string | null;
+  unit: string;
+  sell_price: number;
+  stock_qty: number;
+  image_url: string | null;
+}
+
+export type OnlineOrderDeliveryMethod = "delivery" | "pickup";
+export type OnlineOrderPaymentMethod = "bank_transfer" | "cod" | "gateway";
+export type OnlineOrderStatus =
+  | "pending_payment"
+  | "pending_confirmation"
+  | "confirmed"
+  | "packed"
+  | "shipped"
+  | "completed"
+  | "cancelled";
+
+export const ONLINE_ORDER_STATUS_LABEL: Record<OnlineOrderStatus, string> = {
+  pending_payment: "รอชำระเงิน",
+  pending_confirmation: "รอยืนยันออเดอร์",
+  confirmed: "ยืนยันแล้ว",
+  packed: "แพ็คสินค้าแล้ว",
+  shipped: "จัดส่งแล้ว",
+  completed: "สำเร็จ",
+  cancelled: "ยกเลิกแล้ว",
+};
+
+export const ONLINE_ORDER_DELIVERY_LABEL: Record<OnlineOrderDeliveryMethod, string> = {
+  delivery: "จัดส่ง",
+  pickup: "รับที่ร้าน",
+};
+
+export const ONLINE_ORDER_PAYMENT_LABEL: Record<OnlineOrderPaymentMethod, string> = {
+  bank_transfer: "โอนเงิน + แนบสลิป",
+  cod: "เก็บเงินปลายทาง/รับที่ร้าน",
+  gateway: "ชำระผ่านเกตเวย์ออนไลน์ (เร็วๆ นี้)",
+};
+
+export interface OnlineOrderItem {
+  id: string;
+  order_id: string;
+  product_id: string | null;
+  product_name: string;
+  unit_price: number;
+  qty: number;
+  line_total: number;
+}
+
+export interface OnlineOrder {
+  id: string;
+  order_no: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_address: string | null;
+  delivery_method: OnlineOrderDeliveryMethod;
+  payment_method: OnlineOrderPaymentMethod;
+  payment_slip_url: string | null;
+  status: OnlineOrderStatus;
+  subtotal: number;
+  discount: number;
+  total: number;
+  note: string | null;
+  sale_id: string | null;
+  cancel_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  online_order_items?: OnlineOrderItem[];
+}
+
+export interface CartItem {
+  product_id: string;
+  name: string;
+  unit: string;
+  sell_price: number;
+  stock_qty: number;
+  qty: number;
 }

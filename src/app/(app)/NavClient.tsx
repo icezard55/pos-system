@@ -9,6 +9,7 @@ const links = [
   { href: "/shift", label: "เปิด-ปิดกะ", icon: "💰", roles: ["admin", "cashier"] },
   { href: "/sales", label: "ประวัติการขาย", icon: "🧾", roles: ["admin", "cashier"] },
   { href: "/customers", label: "ลูกค้า/สมาชิก", icon: "🧑‍🤝‍🧑", roles: ["admin", "cashier"] },
+  { href: "/online-orders", label: "ออเดอร์ออนไลน์", icon: "🛍️", roles: ["admin"] },
   { href: "/products", label: "จัดการสต๊อกสินค้า", icon: "📦", roles: ["admin"] },
   { href: "/stock-adjustments", label: "ปรับสต๊อก", icon: "🛠️", roles: ["admin"] },
   { href: "/purchase-orders", label: "ใบสั่งซื้อ", icon: "📥", roles: ["admin"] },

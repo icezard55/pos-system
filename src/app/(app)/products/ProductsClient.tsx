@@ -16,7 +16,7 @@ const HEADER_MAP: Record<string, string> = {
 };
 
 function emptyForm() {
-  return { id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0", low_stock_threshold: "5" };
+  return { id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0", low_stock_threshold: "5", image_url: "" };
 }
 
 export default function ProductsClient({ initialProducts }: { initialProducts: Product[] }) {
@@ -29,7 +29,9 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
   const [newCategory, setNewCategory] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const imageFileRef = useRef<HTMLInputElement>(null);
 
   const categories = useMemo(() => {
     return Array.from(new Set(products.map((p) => (p.category ?? "").trim()).filter(Boolean))).sort((a, b) =>
@@ -62,10 +64,34 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       id: p.id, sku: p.sku ?? "", name: p.name, category: p.category ?? "", unit: p.unit,
       cost_price: String(p.cost_price), sell_price: String(p.sell_price),
       stock_qty: String(p.stock_qty), low_stock_threshold: String(p.low_stock_threshold),
+      image_url: p.image_url ?? "",
     });
     setAddingCategory(false);
     setNewCategory("");
     setShowModal(true);
+  }
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImage(true);
+    setMsg(null);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `products/${form.id || "new"}-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("shop-uploads").upload(path, file, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("shop-uploads").getPublicUrl(path);
+      setForm((f) => ({ ...f, image_url: pub.publicUrl }));
+    } catch (err: any) {
+      setMsg(`อัปโหลดรูปไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setUploadingImage(false);
+      if (imageFileRef.current) imageFileRef.current.value = "";
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -81,6 +107,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       sell_price: Number(form.sell_price) || 0,
       stock_qty: Number(form.stock_qty) || 0,
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
+      image_url: form.image_url || null,
     };
     try {
       if (form.id) {
@@ -221,6 +248,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-gray-500">
+              <th className="px-4 py-3">รูป</th>
               <th className="px-4 py-3">รหัส</th>
               <th className="px-4 py-3">ชื่อสินค้า</th>
               <th className="px-4 py-3">หมวดหมู่</th>
@@ -234,6 +262,16 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
           <tbody>
             {filtered.map((p) => (
               <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
+                <td className="px-4 py-3">
+                  <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+                    {p.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={p.image_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-xs text-gray-300">📦</span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 text-gray-500">{p.sku ?? "-"}</td>
                 <td className="px-4 py-3 font-medium">{p.name}</td>
                 <td className="px-4 py-3 text-gray-500">{p.category ?? "-"}</td>
@@ -251,7 +289,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-gray-400">ไม่มีข้อมูลสินค้า</td>
+                <td colSpan={9} className="px-4 py-10 text-center text-gray-400">ไม่มีข้อมูลสินค้า</td>
               </tr>
             )}
           </tbody>
@@ -266,6 +304,30 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-medium text-gray-600">ชื่อสินค้า *</label>
                 <input required className="w-full rounded-lg border px-3 py-2 text-sm" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs font-medium text-gray-600">รูปสินค้า (สำหรับร้านค้าออนไลน์)</label>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-gray-50">
+                    {form.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={form.image_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="text-xl text-gray-300">📦</span>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="cursor-pointer rounded-lg border px-3 py-1.5 text-xs hover:bg-gray-50">
+                      {uploadingImage ? "กำลังอัปโหลด..." : form.image_url ? "เปลี่ยนรูป" : "อัปโหลดรูป"}
+                      <input ref={imageFileRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={uploadingImage} />
+                    </label>
+                    {form.image_url && (
+                      <button type="button" onClick={() => setForm((f) => ({ ...f, image_url: "" }))} className="text-xs text-red-500 hover:underline">
+                        ลบรูป
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">รหัสสินค้า (SKU)</label>

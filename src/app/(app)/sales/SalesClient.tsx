@@ -491,7 +491,7 @@ export default function SalesClient({
               className="rounded-lg border px-3 py-1.5 text-sm"
             >
               {(Object.keys(SALE_CHANNEL_LABEL) as SaleChannel[])
-                .filter((c) => c !== "store")
+                .filter((c) => c !== "store" && c !== "online_store")
                 .map((c) => (
                   <option key={c} value={c}>{SALE_CHANNEL_LABEL[c]}</option>
                 ))}

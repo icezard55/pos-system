@@ -220,8 +220,8 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
   const canCheckout = cart.length > 0 && (!splitMode || Math.abs(remaining) < 0.01);
 
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-      <div className="lg:col-span-2">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+      <div className="lg:col-span-1">
         <h1 className="mb-4 text-2xl font-bold">บันทึกการขาย</h1>
         <input
           autoFocus
@@ -234,7 +234,7 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
         <p className="mb-4 mt-1 text-xs text-gray-400">
           {scanMsg ?? "เชื่อมเครื่องสแกนบาร์โค้ด (USB/บลูทูธ) แล้วยิงรหัสสินค้าที่ช่องนี้ได้เลย ระบบจะเพิ่มลงตะกร้าอัตโนมัติ"}
         </p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3">
           {filtered.map((p) => (
             <button
               key={p.id}
@@ -251,12 +251,12 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white p-5 shadow-sm lg:sticky lg:top-6 lg:self-start">
+      <div className="rounded-2xl bg-white p-5 shadow-sm lg:sticky lg:top-6 lg:col-span-4 lg:self-start">
         <h2 className="mb-3 text-lg font-bold text-gray-800">🧾 ตะกร้าสินค้า</h2>
         {cart.length === 0 ? (
           <p className="text-sm text-gray-400">ยังไม่มีสินค้าในตะกร้า</p>
         ) : (
-          <div className="max-h-[28rem] space-y-3 overflow-y-auto">
+          <div className="max-h-[28rem] space-y-3 overflow-y-auto lg:grid lg:max-h-[36rem] lg:grid-cols-2 lg:gap-3 lg:space-y-0">
             {cart.map((l) => (
               <div key={l.product.id} className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
                 <div className="flex items-start justify-between gap-2">

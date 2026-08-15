@@ -252,39 +252,63 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
       </div>
 
       <div className="rounded-2xl bg-white p-5 shadow-sm lg:sticky lg:top-6 lg:self-start">
-        <h2 className="mb-3 font-bold text-gray-800">🧾 ตะกร้าสินค้า</h2>
+        <h2 className="mb-3 text-lg font-bold text-gray-800">🧾 ตะกร้าสินค้า</h2>
         {cart.length === 0 ? (
           <p className="text-sm text-gray-400">ยังไม่มีสินค้าในตะกร้า</p>
         ) : (
-          <div className="max-h-72 space-y-2 overflow-y-auto">
+          <div className="max-h-[28rem] space-y-3 overflow-y-auto">
             {cart.map((l) => (
-              <div key={l.product.id} className="border-b pb-2 text-sm">
-                <div className="flex items-center justify-between gap-2">
+              <div key={l.product.id} className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                <div className="flex items-start justify-between gap-2">
                   <div className="flex-1">
-                    <p className="font-medium">{l.product.name}</p>
-                    <p className="text-xs text-gray-500">฿{l.product.sell_price} x {l.qty}</p>
+                    <p className="text-base font-semibold text-gray-800">{l.product.name}</p>
+                    <p className="text-sm text-gray-500">฿{l.product.sell_price} x {l.qty}</p>
                   </div>
-                  <input
-                    type="number"
-                    min={0}
-                    max={l.product.stock_qty}
-                    value={l.qty}
-                    onChange={(e) => updateQty(l.product.id, Number(e.target.value))}
-                    className="w-14 rounded border px-2 py-1 text-center text-sm"
-                  />
-                  <button onClick={() => removeLine(l.product.id)} className="text-red-500">✕</button>
+                  <button
+                    onClick={() => removeLine(l.product.id)}
+                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-lg text-red-500 hover:bg-red-50"
+                  >
+                    ✕
+                  </button>
                 </div>
-                <div className="mt-1 flex items-center gap-1 pl-0.5">
-                  <span className="text-xs text-gray-400">ส่วนลด</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={l.discount || ""}
-                    placeholder="0"
-                    onChange={(e) => updateLineDiscount(l.product.id, Number(e.target.value))}
-                    className="w-16 rounded border px-1.5 py-0.5 text-xs"
-                  />
-                  <span className="text-xs text-gray-400">บาท</span>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updateQty(l.product.id, l.qty - 1)}
+                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-xl font-bold text-gray-600 hover:bg-gray-100"
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      min={0}
+                      max={l.product.stock_qty}
+                      value={l.qty}
+                      onChange={(e) => updateQty(l.product.id, Number(e.target.value))}
+                      className="w-16 rounded-lg border px-2 py-2 text-center text-base font-semibold"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateQty(l.product.id, l.qty + 1)}
+                      disabled={l.qty >= l.product.stock_qty}
+                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-xl font-bold text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="flex flex-1 items-center gap-1.5">
+                    <span className="text-xs text-gray-400">ส่วนลด</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={l.discount || ""}
+                      placeholder="0"
+                      onChange={(e) => updateLineDiscount(l.product.id, Number(e.target.value))}
+                      className="w-20 rounded-lg border px-2 py-1.5 text-sm"
+                    />
+                    <span className="text-xs text-gray-400">บาท</span>
+                  </div>
                 </div>
               </div>
             ))}

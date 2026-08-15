@@ -244,6 +244,9 @@ export default function PurchaseOrdersClient({
   const [editImportMsg, setEditImportMsg] = useState<string | null>(null);
   const editFileRef = useRef<HTMLInputElement>(null);
 
+  const draftItemsTotal = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.unitCost) || 0), 0);
+  const draftGrandTotal = draftItemsTotal + (Number(freightCost) || 0);
+
   const payable = orders.filter((po) => po.status === "received" && po.payment_status !== "paid");
   const payableTotal = payable.reduce((s, po) => s + Number(po.po_total ?? 0), 0);
   const receivedOrders = orders.filter((po) => po.status === "received");
@@ -742,6 +745,23 @@ export default function PurchaseOrdersClient({
           </div>
 
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="หมายเหตุ" className="w-full rounded-lg border px-3 py-2 text-sm" />
+
+          <div className="space-y-1 rounded-xl bg-gray-50 p-3">
+            <div className="flex justify-between text-sm text-gray-600">
+              <span>ยอดรวมค่าสินค้า</span>
+              <span className="font-semibold text-gray-800">฿{draftItemsTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+            </div>
+            {Number(freightCost) > 0 && (
+              <div className="flex justify-between text-xs text-gray-400">
+                <span>+ ค่าขนส่ง</span>
+                <span>฿{Number(freightCost).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            <div className="flex justify-between border-t pt-1 text-base font-bold text-gray-900">
+              <span>ยอดรวมทั้งหมด</span>
+              <span>฿{draftGrandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+            </div>
+          </div>
 
           <button type="submit" disabled={busy} className="rounded-lg bg-brand px-5 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60">
             {busy ? "กำลังบันทึก..." : "บันทึกใบสั่งซื้อ (แบบร่าง)"}

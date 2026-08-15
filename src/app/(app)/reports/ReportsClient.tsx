@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { splitVat, EXPENSE_CATEGORY_LABEL, SALE_CHANNEL_LABEL, type Expense, type ExpenseCategory, type SaleChannel } from "@/lib/types";
@@ -92,6 +92,93 @@ function daysOutstanding(receivedAt: string): number {
 }
 
 type Tab = "sales" | "receiving" | "stock_cost" | "out_of_stock" | "payable" | "receivable" | "expenses";
+
+function SupplierMultiSelect({
+  names,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  names: string[];
+  selected: string[];
+  onToggle: (name: string) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q ? names.filter((n) => n.toLowerCase().includes(q)) : names;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div
+        onClick={() => setOpen((v) => !v)}
+        className="flex min-h-[42px] w-full cursor-pointer flex-wrap items-center gap-1.5 rounded-lg border px-3 py-2 text-sm hover:border-brand"
+      >
+        {selected.length === 0 ? (
+          <span className="text-gray-400">คลิกเพื่อค้นหาและเลือกผู้จัดจำหน่าย...</span>
+        ) : (
+          selected.map((name) => (
+            <span key={name} className="flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand">
+              {name}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggle(name);
+                }}
+                className="text-brand/70 hover:text-brand"
+              >
+                ✕
+              </button>
+            </span>
+          ))
+        )}
+        <span className="ml-auto text-gray-400">{open ? "▲" : "▼"}</span>
+      </div>
+
+      {open && (
+        <div className="absolute z-20 mt-1 w-full rounded-lg border bg-white shadow-lg">
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="พิมพ์ค้นหาผู้จัดจำหน่าย..."
+            className="w-full border-b px-3 py-2 text-sm focus:outline-none"
+          />
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length === 0 && <p className="px-3 py-2 text-xs text-gray-400">ไม่พบผู้จัดจำหน่าย</p>}
+            {filtered.map((name) => {
+              const active = selected.includes(name);
+              return (
+                <label key={name} className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50">
+                  <input type="checkbox" checked={active} onChange={() => onToggle(name)} className="rounded" />
+                  {name}
+                </label>
+              );
+            })}
+          </div>
+          <div className="flex items-center justify-between border-t px-3 py-2 text-xs">
+            <button type="button" onClick={onClear} className="text-gray-500 hover:underline">ล้างทั้งหมด</button>
+            <button type="button" onClick={() => setOpen(false)} className="font-medium text-brand hover:underline">เสร็จสิ้น</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function ReportsClient({
   grandTotal,
@@ -506,24 +593,16 @@ export default function ReportsClient({
                 </button>
               )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {supplierNames.map((name) => {
-                const active = selectedSuppliers.includes(name);
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => toggleSupplier(name)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-medium ${
-                      active ? "border-brand bg-brand text-white" : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                    }`}
-                  >
-                    {name}
-                  </button>
-                );
-              })}
-              {supplierNames.length === 0 && <p className="text-sm text-gray-400">ยังไม่มีผู้จัดจำหน่ายที่รับสินค้าเข้าในช่วงนี้</p>}
-            </div>
+            {supplierNames.length === 0 ? (
+              <p className="text-sm text-gray-400">ยังไม่มีผู้จัดจำหน่ายที่รับสินค้าเข้าในช่วงนี้</p>
+            ) : (
+              <SupplierMultiSelect
+                names={supplierNames}
+                selected={selectedSuppliers}
+                onToggle={toggleSupplier}
+                onClear={() => setSelectedSuppliers([])}
+              />
+            )}
             <p className="mt-2 text-xs text-gray-400">
               {selectedSuppliers.length === 0
                 ? "ยังไม่ได้เลือก — กำลังแสดงทุกผู้จัดจำหน่าย"

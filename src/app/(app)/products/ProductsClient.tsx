@@ -39,6 +39,16 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     );
   }, [products]);
 
+  // include a category just typed into the form even if it hasn't been saved
+  // to any product yet, otherwise the dropdown has no matching <option> for
+  // it and visually looks like it "disappeared" right after adding it
+  const categoryOptions = useMemo(() => {
+    if (form.category && !categories.includes(form.category)) {
+      return [...categories, form.category].sort((a, b) => a.localeCompare(b, "th"));
+    }
+    return categories;
+  }, [categories, form.category]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return products;
@@ -342,7 +352,17 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       placeholder="ชื่อหมวดหมู่ใหม่"
                       value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value)}
+                      onChange={(e) => {
+                        setNewCategory(e.target.value);
+                        setForm((f) => ({ ...f, category: e.target.value.trim() }));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (newCategory.trim()) setForm((f) => ({ ...f, category: newCategory.trim() }));
+                          setAddingCategory(false);
+                        }
+                      }}
                       onBlur={() => {
                         if (newCategory.trim()) setForm((f) => ({ ...f, category: newCategory.trim() }));
                       }}
@@ -372,7 +392,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                     }}
                   >
                     <option value="">- ไม่ระบุหมวดหมู่ -</option>
-                    {categories.map((c) => (
+                    {categoryOptions.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                     <option value="__new__">+ เพิ่มหมวดหมู่ใหม่...</option>

@@ -8,6 +8,7 @@ import { splitVat, SALE_CHANNEL_LABEL, MANUAL_SALE_CHANNELS } from "@/lib/types"
 interface PaymentRow {
   method: PaymentMethod;
   amount: string;
+  received?: string;
 }
 
 export default function PosClient({ products, showVatOnReceipt = true }: { products: Product[]; showVatOnReceipt?: boolean }) {
@@ -33,6 +34,7 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
   const [splitMode, setSplitMode] = useState(false);
   const [singleMethod, setSingleMethod] = useState<PaymentMethod>("cash");
   const [payRows, setPayRows] = useState<PaymentRow[]>([{ method: "cash", amount: "" }]);
+  const [cashReceived, setCashReceived] = useState("");
 
   // ช่องทางการขาย (หน้าร้าน / แพลตฟอร์มออนไลน์)
   const [channel, setChannel] = useState<SaleChannel>("store");
@@ -53,6 +55,11 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
 
   const payRowsSum = payRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const remaining = Math.round((total - payRowsSum) * 100) / 100;
+
+  const cashChange =
+    !splitMode && singleMethod === "cash" && cashReceived !== ""
+      ? Math.round((Number(cashReceived) - total) * 100) / 100
+      : null;
 
   const estimatedPlatformFee =
     channel !== "store" && Number(platformFeePct) > 0
@@ -197,6 +204,7 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
       setShowTaxFields(false);
       setSplitMode(false);
       setPayRows([{ method: "cash", amount: "" }]);
+      setCashReceived("");
       setChannel("store");
       setPlatformNameOther("");
       setPlatformFeePct("");
@@ -426,39 +434,97 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
           </div>
 
           {!splitMode ? (
-            <select value={singleMethod} onChange={(e) => setSingleMethod(e.target.value as PaymentMethod)} className="w-full rounded-lg border px-3 py-1.5 text-sm">
-              <option value="cash">เงินสด</option>
-              <option value="transfer">โอนเงิน</option>
-              <option value="card">บัตร</option>
-              <option value="credit" disabled={!selectedCustomer}>ขายเชื่อ {!selectedCustomer ? "(ต้องเลือกลูกค้าก่อน)" : ""}</option>
-            </select>
-          ) : (
-            <div className="space-y-2">
-              {payRows.map((row, idx) => (
-                <div key={idx} className="flex items-center gap-1.5">
-                  <select
-                    value={row.method}
-                    onChange={(e) => updatePayRow(idx, { method: e.target.value as PaymentMethod })}
-                    className="rounded-lg border px-2 py-1.5 text-xs"
-                  >
-                    <option value="cash">เงินสด</option>
-                    <option value="transfer">โอนเงิน</option>
-                    <option value="card">บัตร</option>
-                    <option value="credit" disabled={!selectedCustomer}>เชื่อ</option>
-                  </select>
+            <>
+              <select
+                value={singleMethod}
+                onChange={(e) => {
+                  setSingleMethod(e.target.value as PaymentMethod);
+                  setCashReceived("");
+                }}
+                className="w-full rounded-lg border px-3 py-1.5 text-sm"
+              >
+                <option value="cash">เงินสด</option>
+                <option value="transfer">โอนเงิน</option>
+                <option value="card">บัตร</option>
+                <option value="credit" disabled={!selectedCustomer}>ขายเชื่อ {!selectedCustomer ? "(ต้องเลือกลูกค้าก่อน)" : ""}</option>
+              </select>
+
+              {singleMethod === "cash" && (
+                <div className="space-y-1 rounded-lg border border-dashed p-2">
+                  <label className="mb-1 block text-xs text-gray-600">รับเงินมา (บาท)</label>
                   <input
                     type="number"
                     min={0}
-                    value={row.amount}
-                    onChange={(e) => updatePayRow(idx, { amount: e.target.value })}
-                    placeholder="0.00"
-                    className="w-20 flex-1 rounded-lg border px-2 py-1.5 text-xs"
+                    step="0.01"
+                    value={cashReceived}
+                    onChange={(e) => setCashReceived(e.target.value)}
+                    placeholder={total ? total.toFixed(2) : "0.00"}
+                    className="w-full rounded-lg border px-3 py-1.5 text-sm"
                   />
-                  {payRows.length > 1 && (
-                    <button onClick={() => removePayRow(idx)} className="text-red-500">✕</button>
+                  {cashReceived !== "" && cashChange !== null && (
+                    <p className={`text-sm font-semibold ${cashChange < 0 ? "text-red-600" : "text-green-700"}`}>
+                      {cashChange >= 0
+                        ? `เงินทอน ฿${cashChange.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
+                        : `รับเงินไม่พอ ขาดอีก ฿${Math.abs(cashChange).toLocaleString("th-TH", { minimumFractionDigits: 2 })}`}
+                    </p>
                   )}
                 </div>
-              ))}
+              )}
+            </>
+          ) : (
+            <div className="space-y-2">
+              {payRows.map((row, idx) => {
+                const rowChange =
+                  row.method === "cash" && row.received && Number(row.amount) > 0
+                    ? Math.round((Number(row.received) - Number(row.amount)) * 100) / 100
+                    : null;
+                return (
+                  <div key={idx} className="space-y-1">
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={row.method}
+                        onChange={(e) => updatePayRow(idx, { method: e.target.value as PaymentMethod, received: "" })}
+                        className="rounded-lg border px-2 py-1.5 text-xs"
+                      >
+                        <option value="cash">เงินสด</option>
+                        <option value="transfer">โอนเงิน</option>
+                        <option value="card">บัตร</option>
+                        <option value="credit" disabled={!selectedCustomer}>เชื่อ</option>
+                      </select>
+                      <input
+                        type="number"
+                        min={0}
+                        value={row.amount}
+                        onChange={(e) => updatePayRow(idx, { amount: e.target.value })}
+                        placeholder="0.00"
+                        className="w-20 flex-1 rounded-lg border px-2 py-1.5 text-xs"
+                      />
+                      {payRows.length > 1 && (
+                        <button onClick={() => removePayRow(idx)} className="text-red-500">✕</button>
+                      )}
+                    </div>
+                    {row.method === "cash" && (
+                      <div className="flex items-center gap-1.5 pl-0.5">
+                        <span className="text-[11px] text-gray-400">รับเงินมา</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={row.received ?? ""}
+                          onChange={(e) => updatePayRow(idx, { received: e.target.value })}
+                          placeholder="0.00"
+                          className="w-20 rounded border px-1.5 py-0.5 text-xs"
+                        />
+                        {rowChange !== null && (
+                          <span className={`text-[11px] font-medium ${rowChange < 0 ? "text-red-600" : "text-green-700"}`}>
+                            {rowChange >= 0 ? `ทอน ฿${rowChange.toFixed(2)}` : `ขาด ฿${Math.abs(rowChange).toFixed(2)}`}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               <button type="button" onClick={addPayRow} className="text-xs text-brand hover:underline">+ เพิ่มช่องทางชำระ</button>
               <p className={`text-xs ${Math.abs(remaining) < 0.01 ? "text-green-600" : "text-red-600"}`}>
                 {Math.abs(remaining) < 0.01 ? "ยอดชำระครบแล้ว" : remaining > 0 ? `ขาดอีก ฿${remaining.toFixed(2)}` : `เกิน ฿${Math.abs(remaining).toFixed(2)}`}

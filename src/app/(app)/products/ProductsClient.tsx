@@ -30,6 +30,11 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [editingCat, setEditingCat] = useState<string | null>(null);
+  const [editingCatValue, setEditingCatValue] = useState("");
+  const [catBusy, setCatBusy] = useState(false);
+  const [catMsg, setCatMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const imageFileRef = useRef<HTMLInputElement>(null);
 
@@ -38,6 +43,21 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       a.localeCompare(b, "th")
     );
   }, [products]);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    products.forEach((p) => {
+      const c = (p.category ?? "").trim();
+      if (!c) return;
+      counts[c] = (counts[c] ?? 0) + 1;
+    });
+    return counts;
+  }, [products]);
+
+  const uncategorizedCount = useMemo(
+    () => products.filter((p) => !(p.category ?? "").trim()).length,
+    [products]
+  );
 
   // include a category just typed into the form even if it hasn't been saved
   // to any product yet, otherwise the dropdown has no matching <option> for
@@ -101,6 +121,69 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     } finally {
       setUploadingImage(false);
       if (imageFileRef.current) imageFileRef.current.value = "";
+    }
+  }
+
+  function openCategoryManager() {
+    setEditingCat(null);
+    setEditingCatValue("");
+    setCatMsg(null);
+    setShowCategoryManager(true);
+  }
+
+  function startEditCat(cat: string) {
+    setEditingCat(cat);
+    setEditingCatValue(cat);
+    setCatMsg(null);
+  }
+
+  function cancelEditCat() {
+    setEditingCat(null);
+    setEditingCatValue("");
+  }
+
+  async function saveEditCat(oldName: string) {
+    const trimmed = editingCatValue.trim();
+    if (!trimmed) {
+      setCatMsg('กรุณาระบุชื่อหมวดหมู่ หรือกดปุ่ม "ลบ" แทนถ้าต้องการล้างหมวดหมู่นี้');
+      return;
+    }
+    if (trimmed === oldName) {
+      cancelEditCat();
+      return;
+    }
+    if (categories.includes(trimmed) && !confirm(`หมวดหมู่ "${trimmed}" มีอยู่แล้ว ต้องการรวมสินค้าทั้งหมดใน "${oldName}" เข้าไปด้วยกันหรือไม่?`)) {
+      return;
+    }
+    setCatBusy(true);
+    setCatMsg(null);
+    try {
+      const { error } = await supabase.from("products").update({ category: trimmed }).eq("category", oldName);
+      if (error) throw error;
+      await refresh();
+      setCatMsg(`เปลี่ยนชื่อหมวดหมู่ "${oldName}" เป็น "${trimmed}" แล้ว`);
+      cancelEditCat();
+    } catch (err: any) {
+      setCatMsg(`แก้ไขไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setCatBusy(false);
+    }
+  }
+
+  async function deleteCat(cat: string) {
+    const count = categoryCounts[cat] ?? 0;
+    if (!confirm(`ต้องการลบหมวดหมู่ "${cat}" ใช่หรือไม่? สินค้า ${count} รายการจะถูกเปลี่ยนเป็น "ไม่ระบุหมวดหมู่" (ไม่ได้ลบสินค้า)`)) return;
+    setCatBusy(true);
+    setCatMsg(null);
+    try {
+      const { error } = await supabase.from("products").update({ category: null }).eq("category", cat);
+      if (error) throw error;
+      await refresh();
+      setCatMsg(`ลบหมวดหมู่ "${cat}" แล้ว`);
+    } catch (err: any) {
+      setCatMsg(`ลบไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setCatBusy(false);
     }
   }
 
@@ -231,6 +314,9 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
             📥 นำเข้าจาก Excel
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
           </label>
+          <button onClick={openCategoryManager} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
+            🏷️ จัดการหมวดหมู่
+          </button>
           <button onClick={openAdd} className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
             + เพิ่มสินค้า
           </button>
@@ -428,6 +514,85 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {showCategoryManager && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-bold">จัดการหมวดหมู่สินค้า</h2>
+              <button onClick={() => setShowCategoryManager(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            {catMsg && <div className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">{catMsg}</div>}
+
+            <div className="max-h-96 space-y-2 overflow-y-auto">
+              {categories.map((cat) => (
+                <div key={cat} className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                  {editingCat === cat ? (
+                    <>
+                      <input
+                        autoFocus
+                        className="flex-1 rounded-lg border px-2 py-1 text-sm"
+                        value={editingCatValue}
+                        onChange={(e) => setEditingCatValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            saveEditCat(cat);
+                          } else if (e.key === "Escape") {
+                            cancelEditCat();
+                          }
+                        }}
+                      />
+                      <button
+                        disabled={catBusy}
+                        onClick={() => saveEditCat(cat)}
+                        className="whitespace-nowrap rounded-lg bg-brand px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        บันทึก
+                      </button>
+                      <button disabled={catBusy} onClick={cancelEditCat} className="whitespace-nowrap rounded-lg border px-2 py-1 text-xs">
+                        ยกเลิก
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm font-medium text-gray-800">{cat}</span>
+                      <span className="whitespace-nowrap text-xs text-gray-400">{categoryCounts[cat] ?? 0} รายการ</span>
+                      <button disabled={catBusy} onClick={() => startEditCat(cat)} className="whitespace-nowrap text-xs font-medium text-brand hover:underline">
+                        แก้ไข
+                      </button>
+                      <button disabled={catBusy} onClick={() => deleteCat(cat)} className="whitespace-nowrap text-xs font-medium text-red-600 hover:underline">
+                        ลบ
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+              {categories.length === 0 && (
+                <p className="py-6 text-center text-sm text-gray-400">ยังไม่มีหมวดหมู่ในระบบ</p>
+              )}
+              {uncategorizedCount > 0 && (
+                <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-gray-400">
+                  <span className="flex-1 text-sm">- ไม่ระบุหมวดหมู่ -</span>
+                  <span className="whitespace-nowrap text-xs">{uncategorizedCount} รายการ</span>
+                </div>
+              )}
+            </div>
+
+            <p className="mt-4 text-xs text-gray-400">
+              แก้ไขชื่อหมวดหมู่จะเปลี่ยนหมวดหมู่ของสินค้าทุกรายการที่อยู่ในหมวดนั้นทันที ถ้าตั้งชื่อซ้ำกับหมวดที่มีอยู่แล้วจะเป็นการรวมหมวดหมู่เข้าด้วยกัน
+              ส่วนการลบจะย้ายสินค้าไปเป็น "ไม่ระบุหมวดหมู่" เท่านั้น ไม่ได้ลบสินค้าออกจากระบบ
+            </p>
+
+            <div className="mt-5 flex justify-end">
+              <button onClick={() => setShowCategoryManager(false)} className="rounded-lg border px-4 py-2 text-sm">
+                ปิด
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

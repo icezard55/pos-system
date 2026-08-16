@@ -138,6 +138,35 @@ export interface PurchaseOrderItem {
   unit_cost: number;
 }
 
+// เจ้าหนี้การค้า (general debts not tied to a purchase order — rent, loans, services, etc.)
+export type PayableStatus = POPaymentStatus;
+
+export const PAYABLE_STATUS_LABEL: Record<PayableStatus, string> = {
+  unpaid: "ยังไม่จ่าย",
+  pending_transfer: "รอโอน",
+  paid: "จ่ายแล้ว",
+};
+
+export const PAYABLE_STATUS_BADGE_CLASS: Record<PayableStatus, string> = {
+  unpaid: "bg-red-100 text-red-700",
+  pending_transfer: "bg-yellow-100 text-yellow-700",
+  paid: "bg-green-100 text-green-700",
+};
+
+export interface Payable {
+  id: string;
+  creditor_name: string;
+  amount: number;
+  due_date: string | null;
+  note: string | null;
+  payment_status: PayableStatus;
+  paid_at: string | null;
+  expense_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type ExpenseCategory =
   | "water"
   | "electricity"
@@ -154,9 +183,10 @@ export type ExpenseCategory =
   | "platform_fee"
   | "product_shipping"
   | "personal"
-  | "other";
+  | "other"
+  | "debt_payment";
 
-export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping" | "platform_fee">;
+export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping" | "platform_fee" | "debt_payment">;
 
 export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   water: "ค่าน้ำ",
@@ -175,6 +205,7 @@ export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   product_shipping: "ขนส่งสินค้า",
   personal: "รายจ่ายส่วนตัว",
   other: "อื่นๆ",
+  debt_payment: "ชำระหนี้เจ้าหนี้การค้า",
 };
 
 export const RECURRING_EXPENSE_CATEGORIES: RecurringExpenseCategory[] = [
@@ -194,7 +225,7 @@ export const RECURRING_EXPENSE_CATEGORIES: RecurringExpenseCategory[] = [
   "other",
 ];
 
-export type ExpenseSource = "manual" | "po_freight" | "recurring" | "platform_fee";
+export type ExpenseSource = "manual" | "po_freight" | "recurring" | "platform_fee" | "payable";
 
 export interface Expense {
   id: string;

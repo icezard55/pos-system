@@ -17,6 +17,7 @@ const sourceLabel: Record<Expense["source"], string> = {
   po_freight: "ค่าขนส่ง (ใบสั่งซื้อ)",
   recurring: "รายการประจำ",
   platform_fee: "ค่าธรรมเนียมแพลตฟอร์ม (อัตโนมัติ)",
+  payable: "ชำระเจ้าหนี้การค้า (อัตโนมัติ)",
 };
 
 const sourceBadgeClass: Record<Expense["source"], string> = {
@@ -24,6 +25,7 @@ const sourceBadgeClass: Record<Expense["source"], string> = {
   po_freight: "bg-blue-100 text-blue-700",
   recurring: "bg-purple-100 text-purple-700",
   platform_fee: "bg-amber-100 text-amber-700",
+  payable: "bg-rose-100 text-rose-700",
 };
 
 function toLocalISODate(d: Date): string {

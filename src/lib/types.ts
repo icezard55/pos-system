@@ -128,6 +128,7 @@ export interface PurchaseOrder {
   po_total: number | null;
   supplier_invoice_no: string | null;
   freight_cost: number;
+  payment_note: string | null;
 }
 
 export interface PurchaseOrderItem {
@@ -161,6 +162,7 @@ export interface Payable {
   note: string | null;
   payment_status: PayableStatus;
   paid_at: string | null;
+  payment_note: string | null;
   expense_id: string | null;
   created_by: string | null;
   created_at: string;

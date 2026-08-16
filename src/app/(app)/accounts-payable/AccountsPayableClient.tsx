@@ -10,6 +10,7 @@ interface ReceivedPO {
   supplier_invoice_no: string | null;
   payment_status: PayableStatus;
   paid_at: string | null;
+  payment_note: string | null;
   po_total: number | null;
   freight_cost: number;
   received_at: string;
@@ -31,6 +32,7 @@ interface CombinedRow {
   date: string;
   dueDate: string | null;
   note: string | null;
+  paymentNote: string | null;
   invoiceNo: string | null;
   payable?: Payable;
 }
@@ -83,6 +85,7 @@ export default function AccountsPayableClient({
       date: po.received_at,
       dueDate: null,
       note: po.note,
+      paymentNote: po.payment_note,
       invoiceNo: po.supplier_invoice_no,
     }));
     const fromManual: CombinedRow[] = payables.map((p) => ({
@@ -94,6 +97,7 @@ export default function AccountsPayableClient({
       date: p.created_at,
       dueDate: p.due_date,
       note: p.note,
+      paymentNote: p.payment_note,
       invoiceNo: null,
       payable: p,
     }));
@@ -144,7 +148,17 @@ export default function AccountsPayableClient({
   }
 
   async function handleStatusChange(row: CombinedRow, status: PayableStatus) {
-    if (status === "paid" && !confirm(`ยืนยันว่าจ่ายเงินให้ "${row.name}" ครบแล้ว?`)) return;
+    let note: string | null = null;
+    if (status === "paid") {
+      // บังคับกรอกหมายเหตุทุกครั้งที่กดจ่ายแล้ว (เช่น จ่ายด้วยวิธีไหน จ่ายให้ใคร)
+      const entered = window.prompt(`ระบุหมายเหตุการจ่ายเงินให้ "${row.name}" (บังคับกรอก):`);
+      if (entered === null) return; // ยกเลิก
+      if (!entered.trim()) {
+        alert("จำเป็นต้องกรอกหมายเหตุก่อนบันทึกว่าจ่ายเงินแล้ว");
+        return;
+      }
+      note = entered.trim();
+    }
     setBusyKey(row.key);
     setError(null);
     try {
@@ -152,12 +166,14 @@ export default function AccountsPayableClient({
         const { error } = await supabase.rpc("update_po_payment_status", {
           p_po_id: row.key.replace("po-", ""),
           p_status: status,
+          p_note: note,
         });
         if (error) throw error;
       } else {
         const { error } = await supabase.rpc("update_payable_status", {
           p_payable_id: row.key.replace("manual-", ""),
           p_status: status,
+          p_note: note,
         });
         if (error) throw error;
       }
@@ -350,6 +366,9 @@ export default function AccountsPayableClient({
                   </div>
                 ) : (
                   row.note && <p className="mt-1 text-xs text-gray-500">หมายเหตุ: {row.note}</p>
+                )}
+                {row.paymentNote && (
+                  <p className="mt-1 text-xs font-medium text-green-700">หมายเหตุการจ่ายเงิน: {row.paymentNote}</p>
                 )}
               </div>
               <div className="text-right">

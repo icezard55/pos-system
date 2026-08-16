@@ -55,6 +55,7 @@ interface PO {
   received_at: string | null;
   payment_status: PaymentStatus;
   paid_at: string | null;
+  payment_note: string | null;
   po_total: number | null;
   supplier_invoice_no: string | null;
   freight_cost: number;
@@ -577,11 +578,21 @@ export default function PurchaseOrdersClient({
   }
 
   async function handlePaymentStatus(po: PO, status: PaymentStatus) {
-    if (status === "paid" && !confirm(`ยืนยันว่าจ่ายเงินให้ผู้จัดจำหน่ายรายนี้ครบแล้ว?`)) return;
+    let note: string | null = null;
+    if (status === "paid") {
+      // บังคับกรอกหมายเหตุทุกครั้งที่กดจ่ายแล้ว (เช่น จ่ายด้วยวิธีไหน จ่ายให้ใคร)
+      const entered = window.prompt(`ระบุหมายเหตุการจ่ายเงินให้ผู้จัดจำหน่ายรายนี้ (บังคับกรอก):`);
+      if (entered === null) return;
+      if (!entered.trim()) {
+        alert("จำเป็นต้องกรอกหมายเหตุก่อนบันทึกว่าจ่ายเงินแล้ว");
+        return;
+      }
+      note = entered.trim();
+    }
     setPayingId(po.id);
     setError(null);
     try {
-      const { error } = await supabase.rpc("update_po_payment_status", { p_po_id: po.id, p_status: status });
+      const { error } = await supabase.rpc("update_po_payment_status", { p_po_id: po.id, p_status: status, p_note: note });
       if (error) throw error;
       router.refresh();
     } catch (err: any) {
@@ -838,6 +849,9 @@ export default function PurchaseOrdersClient({
                 {Number(po.freight_cost) > 0 && ` + ค่าขนส่ง ฿${Number(po.freight_cost).toLocaleString("th-TH", { minimumFractionDigits: 2 })}`}
                 {po.paid_at && ` · จ่ายเงินเมื่อ ${new Date(po.paid_at).toLocaleString("th-TH")}`}
               </p>
+            )}
+            {po.payment_note && (
+              <p className="mb-2 text-xs font-medium text-green-700">หมายเหตุการจ่ายเงิน: {po.payment_note}</p>
             )}
             {po.status === "draft" && Number(po.freight_cost) > 0 && (
               <p className="mb-2 text-xs text-gray-400">ค่าขนส่งที่ตั้งไว้ ฿{Number(po.freight_cost).toLocaleString("th-TH", { minimumFractionDigits: 2 })} (จะบันทึกเป็นรายจ่ายเมื่อรับสินค้าเข้า)</p>

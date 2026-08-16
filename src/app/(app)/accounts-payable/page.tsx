@@ -18,7 +18,7 @@ export default async function AccountsPayablePage() {
 
   const { data: receivedPOs } = await supabase
     .from("purchase_orders")
-    .select("id, supplier_invoice_no, payment_status, paid_at, po_total, freight_cost, received_at, note, suppliers(name)")
+    .select("id, supplier_invoice_no, payment_status, paid_at, payment_note, po_total, freight_cost, received_at, note, suppliers(name)")
     .eq("status", "received")
     .order("received_at", { ascending: false })
     .limit(300);

@@ -188,7 +188,8 @@ export type ExpenseCategory =
   | "other"
   | "debt_payment"
   | "vehicle_maintenance"
-  | "building_maintenance";
+  | "building_maintenance"
+  | "paper_supplies";
 
 export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping" | "platform_fee" | "debt_payment">;
 
@@ -212,6 +213,7 @@ export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
   debt_payment: "ชำระหนี้เจ้าหนี้การค้า",
   vehicle_maintenance: "ค่าซ่อมบำรุงรถ",
   building_maintenance: "ค่าซ่อมบำรุงบ้าน",
+  paper_supplies: "กระดาษสิ้นเปลือง",
 };
 
 export const RECURRING_EXPENSE_CATEGORIES: RecurringExpenseCategory[] = [
@@ -231,6 +233,7 @@ export const RECURRING_EXPENSE_CATEGORIES: RecurringExpenseCategory[] = [
   "other",
   "vehicle_maintenance",
   "building_maintenance",
+  "paper_supplies",
 ];
 
 export type ExpenseSource = "manual" | "po_freight" | "recurring" | "platform_fee" | "payable";

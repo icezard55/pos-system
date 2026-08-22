@@ -24,7 +24,7 @@ export default async function ReportsPage({
 
   const { data: sales } = await supabase
     .from("sales")
-    .select("sale_no, total, subtotal, discount, payment_method, status, created_at")
+    .select("id, sale_no, total, subtotal, discount, payment_method, status, created_at")
     .gte("created_at", startDate.toISOString())
     .lte("created_at", endDate.toISOString())
     .eq("status", "completed")
@@ -68,6 +68,34 @@ export default async function ReportsPage({
     .lte("expense_date", toISODate(endDate))
     .order("expense_date", { ascending: false });
 
+  // ส่วนลดท้ายบิล (bill-level discount) ไม่ได้ถูกบันทึกแยกต่อรายการสินค้าใน sale_items —
+  // sale_items.line_total มีแค่ส่วนลดรายชิ้นเท่านั้น ส่วนลดท้ายบิลถูกหักไว้แค่ที่ระดับ sales.total
+  // เพื่อให้กำไรรายวัน/รายสินค้า/รายหมวดหมู่ รวมกันแล้วตรงกับ "กำไรขั้นต้นโดยประมาณ" ด้านบน (ที่คำนวณจาก
+  // sales.total ซึ่งหักส่วนลดท้ายบิลแล้ว) เราจึงต้องกระจายส่วนลดท้ายบิลของแต่ละบิลลงไปที่รายการสินค้าตามสัดส่วน
+  // ยอดขายของแต่ละชิ้นในบิลนั้น ก่อนคำนวณกำไร
+  const salesTotalById: Record<string, number> = {};
+  (sales ?? []).forEach((s: any) => {
+    if (s.id) salesTotalById[s.id] = Number(s.total);
+  });
+  const lineSumBySale: Record<string, number> = {};
+  (items ?? []).forEach((it: any) => {
+    lineSumBySale[it.sale_id] = (lineSumBySale[it.sale_id] ?? 0) + Number(it.line_total);
+  });
+  const billDiscountBySale: Record<string, number> = {};
+  Object.keys(lineSumBySale).forEach((saleId) => {
+    const saleTotal = salesTotalById[saleId];
+    if (saleTotal === undefined) return;
+    billDiscountBySale[saleId] = Math.max(lineSumBySale[saleId] - saleTotal, 0);
+  });
+
+  function adjustedRevenue(it: any): number {
+    const lineTotal = Number(it.line_total);
+    const lineSum = lineSumBySale[it.sale_id] ?? 0;
+    const billDiscount = billDiscountBySale[it.sale_id] ?? 0;
+    if (billDiscount <= 0 || lineSum <= 0) return lineTotal;
+    return lineTotal - (lineTotal / lineSum) * billDiscount;
+  }
+
   const byDay: Record<string, { total: number; profit: number }> = {};
   (sales ?? []).forEach((s) => {
     const day = new Date(s.created_at).toLocaleDateString("th-TH");
@@ -78,7 +106,7 @@ export default async function ReportsPage({
     const day = new Date(it.sales.created_at).toLocaleDateString("th-TH");
     if (!byDay[day]) byDay[day] = { total: 0, profit: 0 };
     const lineCost = Number(it.cost_price) * Number(it.qty);
-    byDay[day].profit += Number(it.line_total) - lineCost;
+    byDay[day].profit += adjustedRevenue(it) - lineCost;
   });
   const dayRows = Object.entries(byDay).sort((a, b) => (a[0] < b[0] ? 1 : -1));
 
@@ -87,17 +115,18 @@ export default async function ReportsPage({
   let totalCost = 0;
   (items ?? []).forEach((it: any) => {
     if (!byProduct[it.product_name]) byProduct[it.product_name] = { qty: 0, total: 0, profit: 0 };
+    const revenue = adjustedRevenue(it);
     const lineCost = Number(it.cost_price) * Number(it.qty);
-    const lineProfit = Number(it.line_total) - lineCost;
+    const lineProfit = revenue - lineCost;
     byProduct[it.product_name].qty += Number(it.qty);
-    byProduct[it.product_name].total += Number(it.line_total);
+    byProduct[it.product_name].total += revenue;
     byProduct[it.product_name].profit += lineProfit;
     totalCost += lineCost;
 
     const category = it.product_id ? categoryMap[it.product_id] ?? "ไม่ระบุหมวดหมู่" : "ไม่ระบุหมวดหมู่";
     if (!byCategory[category]) byCategory[category] = { qty: 0, total: 0, profit: 0 };
     byCategory[category].qty += Number(it.qty);
-    byCategory[category].total += Number(it.line_total);
+    byCategory[category].total += revenue;
     byCategory[category].profit += lineProfit;
   });
   const topProducts = Object.entries(byProduct)

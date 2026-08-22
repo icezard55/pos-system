@@ -74,6 +74,7 @@ export default function AccountsPayableClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNote, setEditNote] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
+  const [editingStatusKey, setEditingStatusKey] = useState<string | null>(null);
 
   const combined: CombinedRow[] = useMemo(() => {
     const fromPO: CombinedRow[] = receivedPOs.map((po) => ({
@@ -149,15 +150,24 @@ export default function AccountsPayableClient({
 
   async function handleStatusChange(row: CombinedRow, status: PayableStatus) {
     let note: string | null = null;
-    if (status === "paid") {
-      // บังคับกรอกหมายเหตุทุกครั้งที่กดจ่ายแล้ว (เช่น จ่ายด้วยวิธีไหน จ่ายให้ใคร)
-      const entered = window.prompt(`ระบุหมายเหตุการจ่ายเงินให้ "${row.name}" (บังคับกรอก):`);
+    if (status === "paid" || status === "pending_transfer") {
+      // บังคับกรอกหมายเหตุทุกครั้งที่กดจ่ายแล้ว หรือรอโอน (เช่น จ่าย/โอนด้วยวิธีไหน ให้ใคร)
+      const label = status === "paid" ? "จ่ายแล้ว" : "รอโอน";
+      const entered = window.prompt(`ระบุหมายเหตุสำหรับสถานะ "${label}" ให้ "${row.name}" (บังคับกรอก):`);
       if (entered === null) return; // ยกเลิก
       if (!entered.trim()) {
-        alert("จำเป็นต้องกรอกหมายเหตุก่อนบันทึกว่าจ่ายเงินแล้ว");
+        alert("จำเป็นต้องกรอกหมายเหตุก่อนบันทึกสถานะนี้");
         return;
       }
       note = entered.trim();
+    }
+    if (row.status === "paid" && status !== "paid") {
+      const ok = confirm(
+        row.kind === "manual"
+          ? `เปลี่ยนสถานะ "${row.name}" จาก "จ่ายแล้ว" กลับเป็น "${PAYABLE_STATUS_LABEL[status]}" ใช่หรือไม่? ระบบจะลบรายจ่ายที่บันทึกไว้อัตโนมัติออกด้วย`
+          : `เปลี่ยนสถานะ "${row.name}" จาก "จ่ายแล้ว" กลับเป็น "${PAYABLE_STATUS_LABEL[status]}" ใช่หรือไม่?`
+      );
+      if (!ok) return;
     }
     setBusyKey(row.key);
     setError(null);
@@ -177,6 +187,7 @@ export default function AccountsPayableClient({
         });
         if (error) throw error;
       }
+      setEditingStatusKey(null);
       router.refresh();
     } catch (err: any) {
       setError(err.message ?? "อัปเดตสถานะไม่สำเร็จ");
@@ -373,18 +384,35 @@ export default function AccountsPayableClient({
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold text-gray-800">฿{row.amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
-                <div className="mt-1 flex flex-wrap justify-end gap-2">
-                  {row.status !== "paid" && (
-                    <select
-                      value={row.status}
-                      disabled={busyKey === row.key}
-                      onChange={(e) => handleStatusChange(row, e.target.value as PayableStatus)}
-                      className="rounded-lg border px-2 py-1 text-xs disabled:opacity-50"
+                <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
+                  {row.status === "paid" && editingStatusKey !== row.key ? (
+                    <button
+                      onClick={() => setEditingStatusKey(row.key)}
+                      className="text-xs font-medium text-brand hover:underline"
                     >
-                      <option value="unpaid">ยังไม่จ่าย</option>
-                      <option value="pending_transfer">รอโอน</option>
-                      <option value="paid">จ่ายแล้ว</option>
-                    </select>
+                      แก้ไขสถานะ
+                    </button>
+                  ) : (
+                    <>
+                      <select
+                        value={row.status}
+                        disabled={busyKey === row.key}
+                        onChange={(e) => handleStatusChange(row, e.target.value as PayableStatus)}
+                        className="rounded-lg border px-2 py-1 text-xs disabled:opacity-50"
+                      >
+                        <option value="unpaid">ยังไม่จ่าย</option>
+                        <option value="pending_transfer">รอโอน</option>
+                        <option value="paid">จ่ายแล้ว</option>
+                      </select>
+                      {row.status === "paid" && (
+                        <button
+                          onClick={() => setEditingStatusKey(null)}
+                          className="text-xs text-gray-400 hover:underline"
+                        >
+                          ยกเลิก
+                        </button>
+                      )}
+                    </>
                   )}
                   {row.kind === "manual" && editingId !== row.payable?.id && (
                     <button onClick={() => startEditNote(row)} className="text-xs font-medium text-brand hover:underline">

@@ -70,6 +70,33 @@ export interface Sale {
   payment_status: "unpaid" | "paid";
   received_at: string | null;
   note: string | null;
+  discount_code: string | null;
+  discount_code_amount: number;
+}
+
+// ---- โค้ดส่วนลด (discount codes) ----
+
+export type DiscountType = "percent" | "fixed";
+
+export const DISCOUNT_TYPE_LABEL: Record<DiscountType, string> = {
+  percent: "เปอร์เซ็นต์ (%)",
+  fixed: "จำนวนเงินคงที่ (บาท)",
+};
+
+export interface DiscountCode {
+  id: string;
+  code: string;
+  discount_type: DiscountType;
+  discount_value: number;
+  max_discount_amount: number | null;
+  min_order_amount: number;
+  max_uses: number | null;
+  used_count: number;
+  valid_until: string | null;
+  is_active: boolean;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
 }
 
 export const SALE_PAYMENT_STATUS_LABEL: Record<"unpaid" | "paid", string> = {
@@ -381,6 +408,7 @@ export interface OnlineOrder {
   order_no: string;
   customer_name: string;
   customer_phone: string;
+  customer_email: string | null;
   customer_address: string | null;
   delivery_method: OnlineOrderDeliveryMethod;
   payment_method: OnlineOrderPaymentMethod;
@@ -388,6 +416,8 @@ export interface OnlineOrder {
   status: OnlineOrderStatus;
   subtotal: number;
   discount: number;
+  discount_code: string | null;
+  discount_code_amount: number;
   total: number;
   note: string | null;
   sale_id: string | null;

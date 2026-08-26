@@ -50,10 +50,17 @@ export default function ShopClient({
   // checkout form
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [deliveryMethod, setDeliveryMethod] = useState<OnlineOrderDeliveryMethod>("delivery");
   const [paymentMethod, setPaymentMethod] = useState<OnlineOrderPaymentMethod>("bank_transfer");
   const [note, setNote] = useState("");
+
+  // โค้ดส่วนลด
+  const [discountCode, setDiscountCode] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; amount: number } | null>(null);
+  const [discountCodeMsg, setDiscountCodeMsg] = useState<string | null>(null);
+  const [discountCodeChecking, setDiscountCodeChecking] = useState(false);
 
   // result
   const [placedOrder, setPlacedOrder] = useState<{ order_id: string; order_no: string; total: number } | null>(null);
@@ -81,6 +88,46 @@ export default function ShopClient({
 
   const cartTotal = cart.reduce((s, c) => s + c.sell_price * c.qty, 0);
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
+  const discountCodeAmount = appliedDiscount?.amount ?? 0;
+  const checkoutTotal = Math.max(cartTotal - discountCodeAmount, 0);
+
+  // ถ้าตะกร้าเปลี่ยนหลังจากใช้โค้ดไปแล้ว ให้ยกเลิกโค้ดเดิม บังคับให้ตรวจสอบใหม่
+  useEffect(() => {
+    if (appliedDiscount) {
+      setAppliedDiscount(null);
+      setDiscountCodeMsg("ตะกร้าเปลี่ยนแปลง กรุณากดตรวจสอบโค้ดอีกครั้ง");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartTotal]);
+
+  async function handleApplyDiscountCode() {
+    setDiscountCodeMsg(null);
+    if (!discountCode.trim()) {
+      setDiscountCodeMsg("กรุณากรอกโค้ดส่วนลด");
+      return;
+    }
+    setDiscountCodeChecking(true);
+    try {
+      const { data, error } = await supabase.rpc("validate_discount_code", {
+        p_code: discountCode.trim(),
+        p_order_amount: cartTotal,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      setAppliedDiscount({ code: row.code, amount: Number(row.discount_amount) });
+    } catch (e: any) {
+      setAppliedDiscount(null);
+      setDiscountCodeMsg(e.message || "โค้ดไม่ถูกต้อง");
+    } finally {
+      setDiscountCodeChecking(false);
+    }
+  }
+
+  function removeDiscountCode() {
+    setAppliedDiscount(null);
+    setDiscountCode("");
+    setDiscountCodeMsg(null);
+  }
 
   function updateCart(next: CartItem[]) {
     setCart(next);
@@ -132,11 +179,16 @@ export default function ShopClient({
         p_payment_method: paymentMethod,
         p_items: items,
         p_note: note || null,
+        p_discount_code: appliedDiscount?.code ?? null,
+        p_customer_email: customerEmail.trim() || null,
       });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       setPlacedOrder({ order_id: row.order_id, order_no: row.order_no, total: Number(row.total) });
       updateCart([]);
+      setDiscountCode("");
+      setAppliedDiscount(null);
+      setDiscountCodeMsg(null);
       setView("done");
     } catch (e: any) {
       setErr(e.message || "เกิดข้อผิดพลาด กรุณาลองใหม่");
@@ -261,6 +313,16 @@ export default function ShopClient({
             />
           </div>
           <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">อีเมล (ไม่บังคับ)</label>
+            <input
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              className="w-full rounded-lg border px-3 py-2 text-sm"
+              placeholder="example@email.com"
+            />
+          </div>
+          <div>
             <label className="mb-1 block text-xs font-medium text-gray-600">วิธีรับสินค้า</label>
             <div className="flex gap-2">
               {(["delivery", "pickup"] as OnlineOrderDeliveryMethod[]).map((m) => (
@@ -320,9 +382,52 @@ export default function ShopClient({
             />
           </div>
 
-          <div className="flex items-center justify-between border-t pt-3 text-sm">
-            <span className="text-gray-500">ยอดรวม</span>
-            <span className="font-bold text-gray-800">{money(cartTotal)} บาท</span>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-600">โค้ดส่วนลด (ถ้ามี)</label>
+            {appliedDiscount ? (
+              <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+                <span>
+                  ใช้โค้ด <span className="font-mono font-semibold">{appliedDiscount.code}</span> — ลด{" "}
+                  {money(appliedDiscount.amount)} บาท
+                </span>
+                <button type="button" onClick={removeDiscountCode} className="font-medium text-red-500">ยกเลิก</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  value={discountCode}
+                  onChange={(e) => setDiscountCode(e.target.value)}
+                  placeholder="กรอกโค้ดส่วนลด"
+                  className="flex-1 rounded-lg border px-3 py-2 text-sm uppercase"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyDiscountCode}
+                  disabled={discountCodeChecking}
+                  className="rounded-lg border border-indigo-600 px-3 py-2 text-xs font-medium text-indigo-600 disabled:opacity-50"
+                >
+                  {discountCodeChecking ? "กำลังตรวจสอบ..." : "ใช้โค้ด"}
+                </button>
+              </div>
+            )}
+            {discountCodeMsg && <p className="mt-1 text-xs text-red-600">{discountCodeMsg}</p>}
+          </div>
+
+          <div className="border-t pt-3 text-sm">
+            <div className="flex items-center justify-between text-gray-500">
+              <span>ยอดสินค้า</span>
+              <span>{money(cartTotal)} บาท</span>
+            </div>
+            {discountCodeAmount > 0 && (
+              <div className="flex items-center justify-between text-green-600">
+                <span>ส่วนลด</span>
+                <span>-{money(discountCodeAmount)} บาท</span>
+              </div>
+            )}
+            <div className="mt-1 flex items-center justify-between text-base font-bold text-gray-800">
+              <span>ยอดรวม</span>
+              <span>{money(checkoutTotal)} บาท</span>
+            </div>
           </div>
 
           {err && <p className="text-xs text-red-600">{err}</p>}

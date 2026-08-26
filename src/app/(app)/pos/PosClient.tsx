@@ -42,6 +42,12 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
   const [platformFeePct, setPlatformFeePct] = useState("");
   const [note, setNote] = useState("");
 
+  // โค้ดส่วนลด
+  const [discountCode, setDiscountCode] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; amount: number } | null>(null);
+  const [discountCodeMsg, setDiscountCodeMsg] = useState<string | null>(null);
+  const [discountCodeChecking, setDiscountCodeChecking] = useState(false);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return products.slice(0, 30);
@@ -50,8 +56,48 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
 
   const subtotal = cart.reduce((s, l) => s + l.product.sell_price * l.qty, 0);
   const lineDiscountsTotal = cart.reduce((s, l) => s + (Number(l.discount) || 0), 0);
-  const total = Math.max(subtotal - lineDiscountsTotal - (Number(billDiscount) || 0), 0);
+  const preCodeTotal = Math.max(subtotal - lineDiscountsTotal - (Number(billDiscount) || 0), 0);
+  const discountCodeAmount = appliedDiscount?.amount ?? 0;
+  const total = Math.max(preCodeTotal - discountCodeAmount, 0);
   const { base: vatBase, vat } = splitVat(total);
+
+  // ถ้าตะกร้าหรือส่วนลดท้ายบิลเปลี่ยนหลังจากใช้โค้ดไปแล้ว ให้ยกเลิกโค้ดเดิม บังคับให้ตรวจสอบใหม่
+  useEffect(() => {
+    if (appliedDiscount) {
+      setAppliedDiscount(null);
+      setDiscountCodeMsg("ตะกร้าเปลี่ยนแปลง กรุณากดตรวจสอบโค้ดอีกครั้ง");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtotal, lineDiscountsTotal, billDiscount]);
+
+  async function handleApplyDiscountCode() {
+    setDiscountCodeMsg(null);
+    if (!discountCode.trim()) {
+      setDiscountCodeMsg("กรุณากรอกโค้ดส่วนลด");
+      return;
+    }
+    setDiscountCodeChecking(true);
+    try {
+      const { data, error } = await supabase.rpc("validate_discount_code", {
+        p_code: discountCode.trim(),
+        p_order_amount: preCodeTotal,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      setAppliedDiscount({ code: row.code, amount: Number(row.discount_amount) });
+    } catch (e: any) {
+      setAppliedDiscount(null);
+      setDiscountCodeMsg(e.message || "โค้ดไม่ถูกต้อง");
+    } finally {
+      setDiscountCodeChecking(false);
+    }
+  }
+
+  function removeDiscountCode() {
+    setAppliedDiscount(null);
+    setDiscountCode("");
+    setDiscountCodeMsg(null);
+  }
 
   const payRowsSum = payRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const remaining = Math.round((total - payRowsSum) * 100) / 100;
@@ -192,6 +238,7 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
         p_platform_name: channel === "other" ? platformNameOther.trim() || null : null,
         p_platform_fee_pct: channel !== "store" && Number(platformFeePct) > 0 ? Number(platformFeePct) : null,
         p_note: note.trim() || null,
+        p_discount_code: appliedDiscount?.code ?? null,
       });
       if (error) throw error;
       const saleId = data?.[0]?.sale_id;
@@ -209,6 +256,9 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
       setPlatformNameOther("");
       setPlatformFeePct("");
       setNote("");
+      setDiscountCode("");
+      setAppliedDiscount(null);
+      setDiscountCodeMsg(null);
       if (saleId) router.push(`/receipt/${saleId}`);
     } catch (err: any) {
       setError(err.message ?? "บันทึกการขายไม่สำเร็จ");
@@ -432,6 +482,37 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
           </div>
 
           <div>
+            <label className="mb-1 block text-xs text-gray-600">โค้ดส่วนลด (ถ้ามี)</label>
+            {appliedDiscount ? (
+              <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+                <span>
+                  ใช้โค้ด <span className="font-mono font-semibold">{appliedDiscount.code}</span> — ลด ฿
+                  {appliedDiscount.amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                </span>
+                <button type="button" onClick={removeDiscountCode} className="font-medium text-red-500">ยกเลิก</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  value={discountCode}
+                  onChange={(e) => setDiscountCode(e.target.value)}
+                  placeholder="กรอกโค้ดส่วนลด"
+                  className="flex-1 rounded-lg border px-3 py-1.5 text-sm uppercase"
+                />
+                <button
+                  type="button"
+                  onClick={handleApplyDiscountCode}
+                  disabled={discountCodeChecking}
+                  className="rounded-lg border border-brand px-3 py-1.5 text-xs font-medium text-brand hover:bg-brand/5 disabled:opacity-50"
+                >
+                  {discountCodeChecking ? "กำลังตรวจสอบ..." : "ใช้โค้ด"}
+                </button>
+              </div>
+            )}
+            {discountCodeMsg && <p className="mt-1 text-xs text-red-600">{discountCodeMsg}</p>}
+          </div>
+
+          <div>
             <label className="mb-1 block text-xs text-gray-600">หมายเหตุ (เก็บภายในเท่านั้น ไม่แสดงบนใบเสร็จ)</label>
             <textarea
               value={note}
@@ -564,6 +645,12 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
             <div className="flex justify-between text-gray-600">
               <span>ส่วนลดรวม</span>
               <span>-฿{(lineDiscountsTotal + (Number(billDiscount) || 0)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
+          {discountCodeAmount > 0 && (
+            <div className="flex justify-between text-green-600">
+              <span>โค้ดส่วนลด ({appliedDiscount?.code})</span>
+              <span>-฿{discountCodeAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
             </div>
           )}
           <div className="flex justify-between text-lg font-bold text-gray-900">

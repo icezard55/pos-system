@@ -306,62 +306,82 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
         {cart.length === 0 ? (
           <p className="text-sm text-gray-400">ยังไม่มีสินค้าในตะกร้า</p>
         ) : (
-          <div className="max-h-[28rem] space-y-3 overflow-y-auto lg:grid lg:max-h-[36rem] lg:grid-cols-2 lg:gap-3 lg:space-y-0">
-            {cart.map((l) => (
-              <div key={l.product.id} className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="text-base font-semibold text-gray-800">{l.product.name}</p>
-                    <p className="text-sm text-gray-500">฿{l.product.sell_price} x {l.qty}</p>
-                  </div>
-                  <button
-                    onClick={() => removeLine(l.product.id)}
-                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-lg text-red-500 hover:bg-red-50"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => updateQty(l.product.id, l.qty - 1)}
-                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-xl font-bold text-gray-600 hover:bg-gray-100"
-                    >
-                      −
-                    </button>
-                    <input
-                      type="number"
-                      min={0}
-                      max={l.product.stock_qty}
-                      value={l.qty}
-                      onChange={(e) => updateQty(l.product.id, Number(e.target.value))}
-                      className="w-16 rounded-lg border px-2 py-2 text-center text-base font-semibold"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => updateQty(l.product.id, l.qty + 1)}
-                      disabled={l.qty >= l.product.stock_qty}
-                      className="flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-xl font-bold text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <div className="flex flex-1 items-center gap-1.5">
-                    <span className="text-xs text-gray-400">ส่วนลด</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={l.discount || ""}
-                      placeholder="0"
-                      onChange={(e) => updateLineDiscount(l.product.id, Number(e.target.value))}
-                      className="w-20 rounded-lg border px-2 py-1.5 text-sm"
-                    />
-                    <span className="text-xs text-gray-400">บาท</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="max-h-[28rem] overflow-y-auto lg:max-h-[36rem]">
+            <table className="w-full border-collapse text-sm">
+              <thead className="sticky top-0 bg-white">
+                <tr className="border-b text-left text-xs text-gray-500">
+                  <th className="py-2 pr-2">No.</th>
+                  <th className="py-2 pr-2">รายการสินค้า</th>
+                  <th className="py-2 pr-2 text-right">ราคา/หน่วย</th>
+                  <th className="py-2 pr-2 text-center">จำนวน</th>
+                  <th className="py-2 pr-2 text-right">ส่วนลด</th>
+                  <th className="py-2 pr-2 text-right">ราคารวม</th>
+                  <th className="py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {cart.map((l, idx) => {
+                  const lineTotal = Math.max(l.product.sell_price * l.qty - (Number(l.discount) || 0), 0);
+                  return (
+                    <tr key={l.product.id} className="border-b border-gray-100 last:border-0">
+                      <td className="py-2 pr-2 align-middle text-gray-400">{idx + 1}</td>
+                      <td className="py-2 pr-2 align-middle font-medium text-gray-800">{l.product.name}</td>
+                      <td className="py-2 pr-2 align-middle text-right text-gray-600">
+                        {Number(l.product.sell_price).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-2 pr-2 align-middle">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => updateQty(l.product.id, l.qty - 1)}
+                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border border-gray-300 bg-white text-sm font-bold text-gray-600 hover:bg-gray-100"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            max={l.product.stock_qty}
+                            value={l.qty}
+                            onChange={(e) => updateQty(l.product.id, Number(e.target.value))}
+                            className="w-12 rounded border px-1 py-1 text-center text-sm font-semibold"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateQty(l.product.id, l.qty + 1)}
+                            disabled={l.qty >= l.product.stock_qty}
+                            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border border-gray-300 bg-white text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-2 pr-2 align-middle text-right">
+                        <input
+                          type="number"
+                          min={0}
+                          value={l.discount || ""}
+                          placeholder="0"
+                          onChange={(e) => updateLineDiscount(l.product.id, Number(e.target.value))}
+                          className="w-16 rounded border px-1.5 py-1 text-right text-sm"
+                        />
+                      </td>
+                      <td className="py-2 pr-2 align-middle text-right font-semibold text-gray-800">
+                        {lineTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-2 align-middle text-right">
+                        <button
+                          onClick={() => removeLine(l.product.id)}
+                          className="flex h-7 w-7 items-center justify-center rounded-full text-base text-red-500 hover:bg-red-50"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 

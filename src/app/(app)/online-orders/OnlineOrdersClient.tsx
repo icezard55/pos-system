@@ -47,6 +47,7 @@ export default function OnlineOrdersClient({ orders }: { orders: OnlineOrder[] }
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [slipView, setSlipView] = useState<string | null>(null);
+  const [customerQuery, setCustomerQuery] = useState("");
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: orders.length };
@@ -56,7 +57,16 @@ export default function OnlineOrdersClient({ orders }: { orders: OnlineOrder[] }
     return c;
   }, [orders]);
 
-  const filtered = tab === "all" ? orders : orders.filter((o) => o.status === tab);
+  const filtered = useMemo(() => {
+    let list = tab === "all" ? orders : orders.filter((o) => o.status === tab);
+    const q = customerQuery.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (o) => o.customer_name.toLowerCase().includes(q) || o.customer_phone.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [orders, tab, customerQuery]);
 
   async function handleConfirm(orderId: string) {
     setErr("");
@@ -105,7 +115,7 @@ export default function OnlineOrdersClient({ orders }: { orders: OnlineOrder[] }
     <div>
       <h1 className="mb-4 text-xl font-bold text-gray-800">ออเดอร์ออนไลน์</h1>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-3 flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
             key={t.key}
@@ -117,6 +127,20 @@ export default function OnlineOrdersClient({ orders }: { orders: OnlineOrder[] }
             {t.label} {counts[t.key] ? `(${counts[t.key]})` : ""}
           </button>
         ))}
+      </div>
+
+      <div className="mb-4">
+        <input
+          value={customerQuery}
+          onChange={(e) => setCustomerQuery(e.target.value)}
+          placeholder="ค้นหาจากชื่อหรือเบอร์โทรลูกค้า..."
+          className="w-full max-w-sm rounded-lg border px-3 py-2 text-sm"
+        />
+        {tab === "cancelled" && customerQuery.trim() && (
+          <p className="mt-1 text-xs text-gray-400">
+            พบ {filtered.length} รายการที่ยกเลิก/ตีกลับ สำหรับ "{customerQuery.trim()}"
+          </p>
+        )}
       </div>
 
       {err && <p className="mb-3 rounded-lg bg-red-50 p-2 text-sm text-red-600">{err}</p>}

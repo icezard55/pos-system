@@ -72,7 +72,15 @@ export interface Sale {
   note: string | null;
   discount_code: string | null;
   discount_code_amount: number;
+  void_type: VoidType | null;
 }
+
+export type VoidType = "cancelled" | "returned";
+
+export const VOID_TYPE_LABEL: Record<VoidType, string> = {
+  cancelled: "ยกเลิก",
+  returned: "ตีกลับ",
+};
 
 // ---- โค้ดส่วนลด (discount codes) ----
 

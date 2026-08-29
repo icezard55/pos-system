@@ -4,8 +4,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
-import type { Sale, SaleChannel } from "@/lib/types";
-import { SALE_CHANNEL_LABEL, SALE_PAYMENT_STATUS_LABEL } from "@/lib/types";
+import type { Sale, SaleChannel, VoidType } from "@/lib/types";
+import { SALE_CHANNEL_LABEL, SALE_PAYMENT_STATUS_LABEL, VOID_TYPE_LABEL } from "@/lib/types";
 
 function toLocalISODate(d: Date): string {
   const y = d.getFullYear();
@@ -78,6 +78,7 @@ export default function SalesClient({
   const [end, setEnd] = useState(endDate);
   const [channelFilter, setChannelFilter] = useState<SaleChannel | "all">("all");
   const [paymentFilter, setPaymentFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [voidTypeFilter, setVoidTypeFilter] = useState<"all" | VoidType>("all");
   const [voidingId, setVoidingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +89,7 @@ export default function SalesClient({
   const [voidTarget, setVoidTarget] = useState<Sale | null>(null);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [reauthError, setReauthError] = useState<string | null>(null);
+  const [voidTypeChoice, setVoidTypeChoice] = useState<VoidType>("cancelled");
 
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
@@ -104,7 +106,8 @@ export default function SalesClient({
     (s) =>
       (s.sale_no.toLowerCase().includes(search.toLowerCase()) || (s.customer_name ?? "").toLowerCase().includes(search.toLowerCase())) &&
       (channelFilter === "all" || s.channel === channelFilter) &&
-      (paymentFilter === "all" || s.payment_status === paymentFilter)
+      (paymentFilter === "all" || s.payment_status === paymentFilter) &&
+      (voidTypeFilter === "all" || (s.status === "void" && s.void_type === voidTypeFilter))
   );
 
   function openReceiveConfirm(sale: Sale) {
@@ -159,6 +162,7 @@ export default function SalesClient({
     setVoidTarget(sale);
     setConfirmPassword("");
     setReauthError(null);
+    setVoidTypeChoice("cancelled");
   }
 
   async function handleConfirmVoid(e: React.FormEvent) {
@@ -174,7 +178,7 @@ export default function SalesClient({
       });
       if (authError) throw new Error("รหัสผ่านไม่ถูกต้อง");
 
-      const { error } = await supabase.rpc("void_sale", { p_sale_id: voidTarget.id });
+      const { error } = await supabase.rpc("void_sale", { p_sale_id: voidTarget.id, p_void_type: voidTypeChoice });
       if (error) throw error;
       setVoidTarget(null);
       router.refresh();
@@ -541,6 +545,26 @@ export default function SalesClient({
           <form onSubmit={handleConfirmVoid} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
             <h2 className="mb-1 font-bold text-gray-800">ยืนยันยกเลิกบิล {voidTarget.sale_no}</h2>
             <p className="mb-3 text-xs text-gray-500">สต๊อกสินค้าจะถูกคืนกลับอัตโนมัติ และไม่สามารถย้อนกลับได้ กรุณายืนยันตัวตนด้วยรหัสผ่านของคุณ</p>
+            <label className="mb-1 block text-xs text-gray-600">ประเภทการยกเลิก</label>
+            <div className="mb-3 flex gap-2">
+              {(["cancelled", "returned"] as VoidType[]).map((t) => (
+                <label
+                  key={t}
+                  className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm ${
+                    voidTypeChoice === t ? "border-red-600 bg-red-50 text-red-700" : "text-gray-600"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="voidType"
+                    checked={voidTypeChoice === t}
+                    onChange={() => setVoidTypeChoice(t)}
+                    className="sr-only"
+                  />
+                  {VOID_TYPE_LABEL[t]}
+                </label>
+              ))}
+            </div>
             <input
               type="password"
               autoFocus
@@ -637,6 +661,15 @@ export default function SalesClient({
           <option value="unpaid">รอรับเงิน</option>
           <option value="paid">ได้รับเงินแล้ว</option>
         </select>
+        <select
+          value={voidTypeFilter}
+          onChange={(e) => setVoidTypeFilter(e.target.value as "all" | VoidType)}
+          className="rounded-lg border px-3 py-2 text-sm"
+        >
+          <option value="all">บิลปกติ + ยกเลิกทั้งหมด</option>
+          <option value="cancelled">เฉพาะที่ยกเลิก</option>
+          <option value="returned">เฉพาะที่ตีกลับ</option>
+        </select>
       </div>
       <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
         <table className="w-full text-sm">
@@ -678,7 +711,9 @@ export default function SalesClient({
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-1">
                       {isVoid ? (
-                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">ยกเลิกแล้ว</span>
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                          ยกเลิกแล้ว{s.void_type ? ` (${VOID_TYPE_LABEL[s.void_type]})` : ""}
+                        </span>
                       ) : (
                         <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">สำเร็จ</span>
                       )}

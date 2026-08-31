@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Customer } from "@/lib/types";
+import type { Customer, CustomerType } from "@/lib/types";
+import { CUSTOMER_TYPE_LABEL } from "@/lib/types";
 
 export default function CustomersClient({
   initialCustomers,
@@ -19,6 +20,7 @@ export default function CustomersClient({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [creditLimit, setCreditLimit] = useState("0");
+  const [customerType, setCustomerType] = useState<CustomerType>("retail");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +44,7 @@ export default function CustomersClient({
           phone: phone || null,
           note: note || null,
           credit_limit: isAdmin ? Number(creditLimit) || 0 : 0,
+          customer_type: customerType,
         })
         .select()
         .single();
@@ -50,6 +53,7 @@ export default function CustomersClient({
       setName("");
       setPhone("");
       setCreditLimit("0");
+      setCustomerType("retail");
       setNote("");
       setShowAdd(false);
       router.refresh();
@@ -68,6 +72,17 @@ export default function CustomersClient({
       setCustomers((prev) => prev.map((x) => (x.id === c.id ? { ...x, credit_limit: value } : x)));
     } catch (err: any) {
       setError(err.message ?? "แก้ไขวงเงินไม่สำเร็จ");
+    }
+  }
+
+  async function handleUpdateCustomerType(c: Customer, value: CustomerType) {
+    setError(null);
+    try {
+      const { error } = await supabase.from("customers").update({ customer_type: value }).eq("id", c.id);
+      if (error) throw error;
+      setCustomers((prev) => prev.map((x) => (x.id === c.id ? { ...x, customer_type: value } : x)));
+    } catch (err: any) {
+      setError(err.message ?? "แก้ไขประเภทลูกค้าไม่สำเร็จ");
     }
   }
 
@@ -113,6 +128,11 @@ export default function CustomersClient({
         <form onSubmit={handleAdd} className="mb-6 grid gap-3 rounded-2xl bg-white p-5 shadow-sm sm:grid-cols-2">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="ชื่อลูกค้า *" required className="rounded-lg border px-3 py-2 text-sm" />
           <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="เบอร์โทร" className="rounded-lg border px-3 py-2 text-sm" />
+          <select value={customerType} onChange={(e) => setCustomerType(e.target.value as CustomerType)} className="rounded-lg border px-3 py-2 text-sm">
+            {Object.entries(CUSTOMER_TYPE_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
           {isAdmin && (
             <input type="number" min={0} value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} placeholder="วงเงินเชื่อ (บาท)" className="rounded-lg border px-3 py-2 text-sm" />
           )}
@@ -148,6 +168,7 @@ export default function CustomersClient({
             <tr className="border-b bg-gray-50 text-left text-gray-500">
               <th className="px-4 py-3">ชื่อ</th>
               <th className="px-4 py-3">เบอร์โทร</th>
+              <th className="px-4 py-3">ประเภท</th>
               <th className="px-4 py-3 text-right">แต้มสะสม</th>
               <th className="px-4 py-3 text-right">วงเงินเชื่อ</th>
               <th className="px-4 py-3 text-right">ยอดค้างชำระ</th>
@@ -159,6 +180,25 @@ export default function CustomersClient({
               <tr key={c.id} className="border-b last:border-0 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium">{c.name}</td>
                 <td className="px-4 py-3 text-gray-500">{c.phone ?? "-"}</td>
+                <td className="px-4 py-3">
+                  {isAdmin ? (
+                    <select
+                      value={c.customer_type ?? "retail"}
+                      onChange={(e) => handleUpdateCustomerType(c, e.target.value as CustomerType)}
+                      className={`rounded-full border-0 px-2 py-1 text-xs font-medium ${
+                        c.customer_type === "wholesale" ? "bg-sky-50 text-sky-600" : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {Object.entries(CUSTOMER_TYPE_LABEL).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className={`rounded-full px-2 py-1 text-xs font-medium ${c.customer_type === "wholesale" ? "bg-sky-50 text-sky-600" : "bg-gray-100 text-gray-500"}`}>
+                      {CUSTOMER_TYPE_LABEL[c.customer_type ?? "retail"]}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-right">{c.points}</td>
                 <td className="px-4 py-3 text-right">
                   {isAdmin ? (
@@ -189,7 +229,7 @@ export default function CustomersClient({
               </tr>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">ไม่มีข้อมูลลูกค้า</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">ไม่มีข้อมูลลูกค้า</td></tr>
             )}
           </tbody>
         </table>

@@ -26,6 +26,8 @@ export interface Product {
   card_color: string | null;
   receipt_name: string | null;
   sort_order: number;
+  expiry_date: string | null;
+  wholesale_price: number | null;
 }
 
 export interface ProductBarcode {
@@ -153,6 +155,13 @@ export interface CartLine {
   discount: number;
 }
 
+export type CustomerType = "retail" | "wholesale";
+
+export const CUSTOMER_TYPE_LABEL: Record<CustomerType, string> = {
+  retail: "ลูกค้าปลีก",
+  wholesale: "ลูกค้าส่ง",
+};
+
 export interface Customer {
   id: string;
   name: string;
@@ -162,6 +171,7 @@ export interface Customer {
   credit_limit: number;
   note: string | null;
   created_at: string;
+  customer_type: CustomerType;
 }
 
 export interface Supplier {

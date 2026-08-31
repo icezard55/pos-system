@@ -115,7 +115,19 @@ export default function PosClient({
     return map;
   }, [products, barcodes]);
 
-  const subtotal = cart.reduce((s, l) => s + l.product.sell_price * l.qty, 0);
+  const isWholesale = selectedCustomer?.customer_type === "wholesale";
+  function effectivePrice(p: Product) {
+    return isWholesale && p.wholesale_price != null ? Number(p.wholesale_price) : Number(p.sell_price);
+  }
+  function expiryBadge(p: Product) {
+    if (!p.expiry_date) return null;
+    const d = Math.round((new Date(p.expiry_date + "T00:00:00").getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000);
+    if (d < 0) return { text: `หมดอายุแล้ว`, cls: "text-red-600" };
+    if (d <= 30) return { text: `ใกล้หมดอายุ (${d} วัน)`, cls: "text-orange-600" };
+    return null;
+  }
+
+  const subtotal = cart.reduce((s, l) => s + effectivePrice(l.product) * l.qty, 0);
   const lineDiscountsTotal = cart.reduce((s, l) => s + (Number(l.discount) || 0), 0);
   const preCodeTotal = Math.max(subtotal - lineDiscountsTotal - (Number(billDiscount) || 0), 0);
   const discountCodeAmount = appliedDiscount?.amount ?? 0;
@@ -350,6 +362,7 @@ export default function PosClient({
             if (item.type === "single") {
               const p = item.product;
               const outOfStock = !p.no_stock_tracking && p.stock_qty <= 0;
+              const badge = expiryBadge(p);
               return (
                 <button
                   key={p.id}
@@ -362,12 +375,16 @@ export default function PosClient({
                   <p className="mt-1 text-xs text-gray-500">
                     {p.no_stock_tracking ? "พร้อมขายเสมอ" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
                   </p>
-                  <p className="mt-1 font-bold text-brand">฿{Number(p.sell_price).toLocaleString("th-TH")}</p>
+                  {badge && <p className={`mt-0.5 text-[10px] font-medium ${badge.cls}`}>⏰ {badge.text}</p>}
+                  <p className="mt-1 font-bold text-brand">
+                    ฿{effectivePrice(p).toLocaleString("th-TH")}
+                    {isWholesale && p.wholesale_price != null && <span className="ml-1 text-[10px] font-normal text-sky-600">ราคาส่ง</span>}
+                  </p>
                 </button>
               );
             }
             const { groupName, variants } = item;
-            const prices = variants.map((v) => Number(v.sell_price));
+            const prices = variants.map((v) => effectivePrice(v));
             const minPrice = Math.min(...prices);
             const maxPrice = Math.max(...prices);
             const totalStock = variants.reduce((s, v) => s + Number(v.stock_qty), 0);
@@ -405,23 +422,27 @@ export default function PosClient({
             </div>
             <p className="mb-3 text-xs text-gray-400">เลือกเบอร์/ตัวเลือกที่ต้องการเพิ่มลงตะกร้า</p>
             <div className="grid grid-cols-2 gap-2">
-              {popupVariants.map((v) => (
-                <button
-                  key={v.id}
-                  disabled={!v.no_stock_tracking && v.stock_qty <= 0}
-                  onClick={() => {
-                    addToCart(v);
-                    setVariantPopupGroup(null);
-                  }}
-                  className="rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <p className="text-sm font-semibold text-gray-800 line-clamp-2">{v.variant_label || v.name}</p>
-                  <p className="mt-1 text-xs text-gray-500">
-                    {v.no_stock_tracking ? "พร้อมขายเสมอ" : `คงเหลือ ${v.stock_qty} ${v.unit}`}
-                  </p>
-                  <p className="mt-1 font-bold text-brand">฿{Number(v.sell_price).toLocaleString("th-TH")}</p>
-                </button>
-              ))}
+              {popupVariants.map((v) => {
+                const badge = expiryBadge(v);
+                return (
+                  <button
+                    key={v.id}
+                    disabled={!v.no_stock_tracking && v.stock_qty <= 0}
+                    onClick={() => {
+                      addToCart(v);
+                      setVariantPopupGroup(null);
+                    }}
+                    className="rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <p className="text-sm font-semibold text-gray-800 line-clamp-2">{v.variant_label || v.name}</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {v.no_stock_tracking ? "พร้อมขายเสมอ" : `คงเหลือ ${v.stock_qty} ${v.unit}`}
+                    </p>
+                    {badge && <p className={`mt-0.5 text-[10px] font-medium ${badge.cls}`}>⏰ {badge.text}</p>}
+                    <p className="mt-1 font-bold text-brand">฿{effectivePrice(v).toLocaleString("th-TH")}</p>
+                  </button>
+                );
+              })}
               {popupVariants.length === 0 && <p className="col-span-full text-sm text-gray-400">ไม่พบตัวเลือกในกลุ่มนี้</p>}
             </div>
           </div>
@@ -448,13 +469,14 @@ export default function PosClient({
               </thead>
               <tbody>
                 {cart.map((l, idx) => {
-                  const lineTotal = Math.max(l.product.sell_price * l.qty - (Number(l.discount) || 0), 0);
+                  const unitPrice = effectivePrice(l.product);
+                  const lineTotal = Math.max(unitPrice * l.qty - (Number(l.discount) || 0), 0);
                   return (
                     <tr key={l.product.id} className="border-b border-gray-100 last:border-0">
                       <td className="py-2 pr-2 align-middle text-gray-400">{idx + 1}</td>
                       <td className="py-2 pr-2 align-middle font-medium text-gray-800">{l.product.name}</td>
                       <td className="py-2 pr-2 align-middle text-right text-gray-600">
-                        {Number(l.product.sell_price).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                        {unitPrice.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
                       </td>
                       <td className="py-2 pr-2 align-middle">
                         <div className="flex items-center justify-center gap-1">
@@ -543,11 +565,17 @@ export default function PosClient({
           ) : (
             <div className="flex items-center justify-between rounded-lg bg-brand/5 px-3 py-2 text-xs">
               <div>
-                <p className="font-semibold text-gray-800">{selectedCustomer.name}</p>
+                <p className="font-semibold text-gray-800">
+                  {selectedCustomer.name}
+                  {isWholesale && <span className="ml-1.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-600">ลูกค้าส่ง</span>}
+                </p>
                 <p className="text-gray-500">แต้มสะสม {selectedCustomer.points} · เครดิตค้าง ฿{Number(selectedCustomer.credit_balance).toLocaleString("th-TH")}</p>
               </div>
               <button onClick={clearCustomer} className="text-red-500">ยกเลิก</button>
             </div>
+          )}
+          {isWholesale && (
+            <p className="text-[11px] text-sky-600">ลูกค้าประเภทลูกค้าส่ง — ระบบใช้ราคาขายส่งอัตโนมัติสำหรับสินค้าที่ตั้งราคาส่งไว้</p>
           )}
 
           <button

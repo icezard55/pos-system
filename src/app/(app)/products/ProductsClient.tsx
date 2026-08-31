@@ -21,7 +21,15 @@ function emptyForm() {
     id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0",
     low_stock_threshold: "5", image_url: "", variant_group: "", variant_label: "",
     storage_location: "", no_stock_tracking: false, card_color: "", receipt_name: "", sort_order: "0",
+    expiry_date: "", wholesale_price: "",
   };
+}
+
+function daysUntil(dateStr: string) {
+  const d = new Date(dateStr + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((d.getTime() - today.getTime()) / 86400000);
 }
 
 export default function ProductsClient({ initialProducts }: { initialProducts: Product[] }) {
@@ -112,6 +120,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       image_url: p.image_url ?? "", variant_group: p.variant_group ?? "", variant_label: p.variant_label ?? "",
       storage_location: p.storage_location ?? "", no_stock_tracking: p.no_stock_tracking ?? false,
       card_color: p.card_color ?? "", receipt_name: p.receipt_name ?? "", sort_order: String(p.sort_order ?? 0),
+      expiry_date: p.expiry_date ?? "", wholesale_price: p.wholesale_price != null ? String(p.wholesale_price) : "",
     });
     setAddingCategory(false);
     setNewCategory("");
@@ -240,6 +249,8 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       card_color: form.card_color || null,
       receipt_name: form.receipt_name.trim() || null,
       sort_order: Number(form.sort_order) || 0,
+      expiry_date: form.expiry_date || null,
+      wholesale_price: form.wholesale_price.trim() ? Number(form.wholesale_price) : null,
     };
     try {
       let productId = form.id;
@@ -442,6 +453,22 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                       📍 {p.storage_location}
                     </span>
                   )}
+                  {p.expiry_date && (() => {
+                    const d = daysUntil(p.expiry_date!);
+                    const expired = d < 0;
+                    const soon = d >= 0 && d <= 30;
+                    if (!expired && !soon) return null;
+                    return (
+                      <span className={`ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-normal ${expired ? "bg-red-100 text-red-600" : "bg-orange-50 text-orange-600"}`}>
+                        ⏰ {expired ? `หมดอายุแล้ว ${Math.abs(d)} วัน` : `ใกล้หมดอายุใน ${d} วัน`}
+                      </span>
+                    );
+                  })()}
+                  {p.wholesale_price != null && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-normal text-sky-600">
+                      ส่ง {Number(p.wholesale_price).toLocaleString("th-TH")}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-gray-500">{p.category ?? "-"}</td>
                 <td className="px-4 py-3 text-gray-500">{p.unit}</td>
@@ -631,6 +658,27 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                   onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
                 />
                 <p className="mt-1 text-[11px] text-gray-400">เลขน้อยแสดงก่อน ค่าเริ่มต้น 0</p>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">วันหมดอายุ</label>
+                <input
+                  type="date"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={form.expiry_date}
+                  onChange={(e) => setForm({ ...form, expiry_date: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">ราคาขายส่ง (ไม่บังคับ)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="ถ้าไม่กรอกจะใช้ราคาขายปกติ"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={form.wholesale_price}
+                  onChange={(e) => setForm({ ...form, wholesale_price: e.target.value })}
+                />
+                <p className="mt-1 text-[11px] text-gray-400">ใช้อัตโนมัติเมื่อขายให้ลูกค้าประเภท "ลูกค้าส่ง"</p>
               </div>
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-medium text-gray-600">ชื่อแยกสำหรับใบเสร็จ (ไม่บังคับ)</label>

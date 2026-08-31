@@ -14,11 +14,14 @@ export default async function PosPage() {
 
   const { data: shopSettings } = await supabase.from("shop_settings").select("*").single();
 
+  const { data: promotions } = await supabase.rpc("get_active_promotions");
+
   return (
     <PosClient
       products={products ?? []}
       barcodes={barcodes ?? []}
       showVatOnReceipt={shopSettings?.show_vat_on_receipt ?? true}
+      promotions={promotions ?? []}
     />
   );
 }

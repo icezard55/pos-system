@@ -12,11 +12,13 @@ export default async function ShopPage() {
     .select("shop_name, phone, address")
     .eq("id", true)
     .maybeSingle();
+  const { data: promotions } = await supabase.rpc("get_active_promotions");
 
   return (
     <ShopClient
       products={(products as StorefrontProduct[]) ?? []}
       shopName={shopSettings?.shop_name ?? "ร้านค้าออนไลน์"}
+      promotions={promotions ?? []}
     />
   );
 }

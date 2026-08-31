@@ -30,6 +30,36 @@ export interface Product {
   wholesale_price: number | null;
 }
 
+export interface Promotion {
+  id: string;
+  product_id: string;
+  name: string;
+  buy_qty: number;
+  get_qty: number;
+  get_discount_pct: number;
+  is_active: boolean;
+  valid_from: string | null;
+  valid_until: string | null;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface ActivePromotion {
+  product_id: string;
+  name: string;
+  buy_qty: number;
+  get_qty: number;
+  get_discount_pct: number;
+}
+
+export function promotionBadgeText(p: { buy_qty: number; get_qty: number; get_discount_pct: number }) {
+  if (Number(p.get_discount_pct) >= 100) {
+    return `ซื้อ ${p.buy_qty} แถม ${p.get_qty}`;
+  }
+  return `ซื้อ ${p.buy_qty} ลด ${p.get_qty} ชิ้น ${p.get_discount_pct}%`;
+}
+
 export interface ProductBarcode {
   id: string;
   product_id: string;

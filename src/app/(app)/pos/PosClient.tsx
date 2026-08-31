@@ -2,8 +2,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { CartLine, Customer, PaymentMethod, Product, SaleChannel } from "@/lib/types";
-import { splitVat, SALE_CHANNEL_LABEL, MANUAL_SALE_CHANNELS } from "@/lib/types";
+import type { ActivePromotion, CartLine, Customer, PaymentMethod, Product, SaleChannel } from "@/lib/types";
+import { splitVat, SALE_CHANNEL_LABEL, MANUAL_SALE_CHANNELS, promotionBadgeText } from "@/lib/types";
 
 interface PaymentRow {
   method: PaymentMethod;
@@ -20,10 +20,12 @@ export default function PosClient({
   products,
   barcodes = [],
   showVatOnReceipt = true,
+  promotions = [],
 }: {
   products: Product[];
   barcodes?: BarcodeRow[];
   showVatOnReceipt?: boolean;
+  promotions?: ActivePromotion[];
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -127,8 +129,21 @@ export default function PosClient({
     return null;
   }
 
+  const promoMap = useMemo(() => new Map(promotions.map((pr) => [pr.product_id, pr])), [promotions]);
+  function promoDiscountFor(p: Product, qty: number, unitPrice: number) {
+    const promo = promoMap.get(p.id);
+    if (!promo) return 0;
+    const cycle = promo.buy_qty + promo.get_qty;
+    if (qty < cycle) return 0;
+    const cycles = Math.floor(qty / cycle);
+    return cycles * promo.get_qty * unitPrice * (promo.get_discount_pct / 100);
+  }
+
   const subtotal = cart.reduce((s, l) => s + effectivePrice(l.product) * l.qty, 0);
-  const lineDiscountsTotal = cart.reduce((s, l) => s + (Number(l.discount) || 0), 0);
+  const lineDiscountsTotal = cart.reduce(
+    (s, l) => s + (Number(l.discount) || 0) + promoDiscountFor(l.product, l.qty, effectivePrice(l.product)),
+    0
+  );
   const preCodeTotal = Math.max(subtotal - lineDiscountsTotal - (Number(billDiscount) || 0), 0);
   const discountCodeAmount = appliedDiscount?.amount ?? 0;
   const total = Math.max(preCodeTotal - discountCodeAmount, 0);
@@ -363,6 +378,7 @@ export default function PosClient({
               const p = item.product;
               const outOfStock = !p.no_stock_tracking && p.stock_qty <= 0;
               const badge = expiryBadge(p);
+              const promo = promoMap.get(p.id);
               return (
                 <button
                   key={p.id}
@@ -375,6 +391,7 @@ export default function PosClient({
                   <p className="mt-1 text-xs text-gray-500">
                     {p.no_stock_tracking ? "พร้อมขายเสมอ" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
                   </p>
+                  {promo && <p className="mt-0.5 text-[10px] font-medium text-pink-600">🎁 {promotionBadgeText(promo)}</p>}
                   {badge && <p className={`mt-0.5 text-[10px] font-medium ${badge.cls}`}>⏰ {badge.text}</p>}
                   <p className="mt-1 font-bold text-brand">
                     ฿{effectivePrice(p).toLocaleString("th-TH")}
@@ -424,6 +441,7 @@ export default function PosClient({
             <div className="grid grid-cols-2 gap-2">
               {popupVariants.map((v) => {
                 const badge = expiryBadge(v);
+                const promo = promoMap.get(v.id);
                 return (
                   <button
                     key={v.id}
@@ -438,6 +456,7 @@ export default function PosClient({
                     <p className="mt-1 text-xs text-gray-500">
                       {v.no_stock_tracking ? "พร้อมขายเสมอ" : `คงเหลือ ${v.stock_qty} ${v.unit}`}
                     </p>
+                    {promo && <p className="mt-0.5 text-[10px] font-medium text-pink-600">🎁 {promotionBadgeText(promo)}</p>}
                     {badge && <p className={`mt-0.5 text-[10px] font-medium ${badge.cls}`}>⏰ {badge.text}</p>}
                     <p className="mt-1 font-bold text-brand">฿{effectivePrice(v).toLocaleString("th-TH")}</p>
                   </button>
@@ -470,11 +489,19 @@ export default function PosClient({
               <tbody>
                 {cart.map((l, idx) => {
                   const unitPrice = effectivePrice(l.product);
-                  const lineTotal = Math.max(unitPrice * l.qty - (Number(l.discount) || 0), 0);
+                  const promoDiscount = promoDiscountFor(l.product, l.qty, unitPrice);
+                  const lineTotal = Math.max(unitPrice * l.qty - (Number(l.discount) || 0) - promoDiscount, 0);
                   return (
                     <tr key={l.product.id} className="border-b border-gray-100 last:border-0">
                       <td className="py-2 pr-2 align-middle text-gray-400">{idx + 1}</td>
-                      <td className="py-2 pr-2 align-middle font-medium text-gray-800">{l.product.name}</td>
+                      <td className="py-2 pr-2 align-middle font-medium text-gray-800">
+                        {l.product.name}
+                        {promoDiscount > 0 && (
+                          <span className="ml-1.5 rounded-full bg-pink-50 px-1.5 py-0.5 text-[10px] font-normal text-pink-600">
+                            🎁 -฿{promoDiscount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2 pr-2 align-middle text-right text-gray-600">
                         {unitPrice.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
                       </td>

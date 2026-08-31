@@ -2,12 +2,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type {
+  ActivePromotion,
   StorefrontProduct,
   CartItem,
   OnlineOrderDeliveryMethod,
   OnlineOrderPaymentMethod,
 } from "@/lib/types";
-import { ONLINE_ORDER_PAYMENT_LABEL, ONLINE_ORDER_DELIVERY_LABEL } from "@/lib/types";
+import { ONLINE_ORDER_PAYMENT_LABEL, ONLINE_ORDER_DELIVERY_LABEL, promotionBadgeText } from "@/lib/types";
 
 const CART_KEY = "shop_cart_v1";
 
@@ -35,9 +36,11 @@ type View = "browse" | "cart" | "checkout" | "done";
 export default function ShopClient({
   products,
   shopName,
+  promotions = [],
 }: {
   products: StorefrontProduct[];
   shopName: string;
+  promotions?: ActivePromotion[];
 }) {
   const supabase = createClient();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -127,10 +130,22 @@ export default function ShopClient({
       .sort((a, b) => (a.variant_label ?? "").localeCompare(b.variant_label ?? "", "th", { numeric: true }));
   }, [products, variantPopupGroup]);
 
+  const promoMap = useMemo(() => new Map(promotions.map((pr) => [pr.product_id, pr])), [promotions]);
+  function promoDiscountFor(c: { product_id: string; sell_price: number; qty: number }) {
+    const promo = promoMap.get(c.product_id);
+    if (!promo) return 0;
+    const cycle = promo.buy_qty + promo.get_qty;
+    if (c.qty < cycle) return 0;
+    const cycles = Math.floor(c.qty / cycle);
+    return cycles * promo.get_qty * c.sell_price * (promo.get_discount_pct / 100);
+  }
+
   const cartTotal = cart.reduce((s, c) => s + c.sell_price * c.qty, 0);
+  const promoDiscountTotal = cart.reduce((s, c) => s + promoDiscountFor(c), 0);
+  const netCartTotal = Math.max(cartTotal - promoDiscountTotal, 0);
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
   const discountCodeAmount = appliedDiscount?.amount ?? 0;
-  const checkoutTotal = Math.max(cartTotal - discountCodeAmount, 0);
+  const checkoutTotal = Math.max(netCartTotal - discountCodeAmount, 0);
 
   // ถ้าตะกร้าเปลี่ยนหลังจากใช้โค้ดไปแล้ว ให้ยกเลิกโค้ดเดิม บังคับให้ตรวจสอบใหม่
   useEffect(() => {
@@ -151,7 +166,7 @@ export default function ShopClient({
     try {
       const { data, error } = await supabase.rpc("validate_discount_code", {
         p_code: discountCode.trim(),
-        p_order_amount: cartTotal,
+        p_order_amount: netCartTotal,
       });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
@@ -462,6 +477,12 @@ export default function ShopClient({
               <span>ยอดสินค้า</span>
               <span>{money(cartTotal)} บาท</span>
             </div>
+            {promoDiscountTotal > 0 && (
+              <div className="flex items-center justify-between text-pink-600">
+                <span>🎁 ส่วนลดโปรโมชั่น</span>
+                <span>-{money(promoDiscountTotal)} บาท</span>
+              </div>
+            )}
             {discountCodeAmount > 0 && (
               <div className="flex items-center justify-between text-green-600">
                 <span>ส่วนลด</span>
@@ -499,10 +520,19 @@ export default function ShopClient({
           <p className="rounded-2xl bg-white p-6 text-center text-sm text-gray-400 shadow-sm">ยังไม่มีสินค้าในตะกร้า</p>
         ) : (
           <div className="space-y-2">
-            {cart.map((c) => (
+            {cart.map((c) => {
+              const promoDiscount = promoDiscountFor(c);
+              return (
               <div key={c.product_id} className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-800">{c.name}</p>
+                  <p className="text-sm font-medium text-gray-800">
+                    {c.name}
+                    {promoDiscount > 0 && (
+                      <span className="ml-1.5 rounded-full bg-pink-50 px-1.5 py-0.5 text-[10px] font-normal text-pink-600">
+                        🎁 -{money(promoDiscount)}
+                      </span>
+                    )}
+                  </p>
                   <p className="text-xs text-gray-400">
                     {money(c.sell_price)} บาท / {c.unit}
                   </p>
@@ -527,10 +557,19 @@ export default function ShopClient({
                   ลบ
                 </button>
               </div>
-            ))}
-            <div className="mt-3 flex items-center justify-between rounded-xl bg-white p-4 shadow-sm">
-              <span className="text-sm text-gray-500">ยอดรวม</span>
-              <span className="text-lg font-bold text-gray-800">{money(cartTotal)} บาท</span>
+              );
+            })}
+            <div className="mt-3 rounded-xl bg-white p-4 shadow-sm">
+              {promoDiscountTotal > 0 && (
+                <div className="mb-1 flex items-center justify-between text-sm text-pink-600">
+                  <span>🎁 ส่วนลดโปรโมชั่น</span>
+                  <span>-{money(promoDiscountTotal)} บาท</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-500">ยอดรวม</span>
+                <span className="text-lg font-bold text-gray-800">{money(netCartTotal)} บาท</span>
+              </div>
             </div>
             <button
               onClick={() => setView("checkout")}
@@ -578,6 +617,7 @@ export default function ShopClient({
             const p = item.product;
             const inCart = cart.find((c) => c.product_id === p.id);
             const outOfStock = !p.no_stock_tracking && Number(p.stock_qty) <= 0;
+            const promo = promoMap.get(p.id);
             return (
               <div key={p.id} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm">
                 <div
@@ -593,6 +633,9 @@ export default function ShopClient({
                 </div>
                 <div className="flex flex-1 flex-col p-2.5">
                   <p className="line-clamp-2 min-h-[2.4em] text-xs font-medium text-gray-800">{p.name}</p>
+                  {promo && (
+                    <p className="mt-0.5 text-[10px] font-medium text-pink-600">🎁 {promotionBadgeText(promo)}</p>
+                  )}
                   <p className="mt-1 text-sm font-bold text-indigo-700">{money(p.sell_price)} บาท</p>
                   <p className="text-[10px] text-gray-400">
                     {p.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
@@ -714,7 +757,7 @@ export default function ShopClient({
           onClick={() => setView("cart")}
           className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full bg-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-lg"
         >
-          🛒 ตะกร้า ({cartCount}) · {money(cartTotal)} บาท
+          🛒 ตะกร้า ({cartCount}) · {money(netCartTotal)} บาท
         </button>
       )}
     </div>

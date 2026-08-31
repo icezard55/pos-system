@@ -204,6 +204,29 @@ export interface Customer {
   customer_type: CustomerType;
 }
 
+export interface LoyaltyReward {
+  id: string;
+  name: string;
+  points_cost: number;
+  stock_qty: number | null;
+  image_url: string | null;
+  is_active: boolean;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface LoyaltyRedemption {
+  id: string;
+  reward_id: string | null;
+  reward_name: string;
+  points_cost: number;
+  customer_id: string;
+  redeemed_by: string | null;
+  redeemed_at: string;
+  note: string | null;
+}
+
 export interface Supplier {
   id: string;
   name: string;

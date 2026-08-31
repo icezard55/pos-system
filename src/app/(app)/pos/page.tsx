@@ -16,12 +16,19 @@ export default async function PosPage() {
 
   const { data: promotions } = await supabase.rpc("get_active_promotions");
 
+  const { data: loyaltyRewards } = await supabase
+    .from("loyalty_rewards")
+    .select("*")
+    .eq("is_active", true)
+    .order("points_cost");
+
   return (
     <PosClient
       products={products ?? []}
       barcodes={barcodes ?? []}
       showVatOnReceipt={shopSettings?.show_vat_on_receipt ?? true}
       promotions={promotions ?? []}
+      loyaltyRewards={loyaltyRewards ?? []}
     />
   );
 }

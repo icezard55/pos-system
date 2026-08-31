@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { ActivePromotion, CartLine, Customer, PaymentMethod, Product, SaleChannel } from "@/lib/types";
+import type { ActivePromotion, CartLine, Customer, LoyaltyReward, PaymentMethod, Product, SaleChannel } from "@/lib/types";
 import { splitVat, SALE_CHANNEL_LABEL, MANUAL_SALE_CHANNELS, promotionBadgeText } from "@/lib/types";
 
 interface PaymentRow {
@@ -21,11 +21,13 @@ export default function PosClient({
   barcodes = [],
   showVatOnReceipt = true,
   promotions = [],
+  loyaltyRewards = [],
 }: {
   products: Product[];
   barcodes?: BarcodeRow[];
   showVatOnReceipt?: boolean;
   promotions?: ActivePromotion[];
+  loyaltyRewards?: LoyaltyReward[];
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -65,6 +67,11 @@ export default function PosClient({
 
   // สินค้าที่มี variant_group เดียวกันจะรวมเป็นการ์ดเดียว กดแล้วเด้งป็อปอัพเลือกเบอร์/ตัวเลือก
   const [variantPopupGroup, setVariantPopupGroup] = useState<string | null>(null);
+
+  // แลกแต้มสะสมเป็นของรางวัล
+  const [showRedeemModal, setShowRedeemModal] = useState(false);
+  const [redeemBusy, setRedeemBusy] = useState(false);
+  const [redeemMsg, setRedeemMsg] = useState<string | null>(null);
 
   const groupedItems = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -253,6 +260,27 @@ export default function PosClient({
   function clearCustomer() {
     setSelectedCustomer(null);
     setCustomerName("");
+  }
+
+  async function handleRedeemReward(reward: LoyaltyReward) {
+    if (!selectedCustomer) return;
+    setRedeemBusy(true);
+    setRedeemMsg(null);
+    try {
+      const { data, error } = await supabase.rpc("redeem_loyalty_reward", {
+        p_customer_id: selectedCustomer.id,
+        p_reward_id: reward.id,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      setSelectedCustomer((c) => (c ? { ...c, points: Number(row.remaining_points) } : c));
+      setRedeemMsg(`แลก "${reward.name}" สำเร็จ เหลือแต้ม ${Number(row.remaining_points).toLocaleString("th-TH")}`);
+      router.refresh();
+    } catch (err: any) {
+      setRedeemMsg(err.message ?? "แลกแต้มไม่สำเร็จ");
+    } finally {
+      setRedeemBusy(false);
+    }
   }
 
   function addPayRow() {
@@ -468,6 +496,58 @@ export default function PosClient({
         </div>
       )}
 
+      {showRedeemModal && selectedCustomer && (
+        <div
+          onClick={() => setShowRedeemModal(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        >
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-800">🎁 แลกแต้มสะสม</h3>
+              <button onClick={() => setShowRedeemModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <p className="mb-3 text-xs text-gray-400">
+              {selectedCustomer.name} · แต้มคงเหลือ {selectedCustomer.points.toLocaleString("th-TH")}
+            </p>
+            {redeemMsg && <p className="mb-2 text-xs text-brand">{redeemMsg}</p>}
+            <div className="max-h-96 space-y-2 overflow-y-auto">
+              {loyaltyRewards.map((r) => {
+                const outOfStock = r.stock_qty !== null && r.stock_qty <= 0;
+                const notEnoughPoints = selectedCustomer.points < r.points_cost;
+                return (
+                  <div key={r.id} className="flex items-center gap-3 rounded-xl border p-2.5">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+                      {r.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={r.image_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-xl text-gray-300">🎁</span>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-800">{r.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {r.points_cost.toLocaleString("th-TH")} แต้ม
+                        {outOfStock && <span className="ml-1.5 text-orange-600">ของหมด</span>}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={redeemBusy || outOfStock || notEnoughPoints}
+                      onClick={() => handleRedeemReward(r)}
+                      className="whitespace-nowrap rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      แลก
+                    </button>
+                  </div>
+                );
+              })}
+              {loyaltyRewards.length === 0 && <p className="text-sm text-gray-400">ยังไม่มีของรางวัล</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-2xl bg-white p-5 shadow-sm lg:sticky lg:top-6 lg:col-span-4 lg:self-start">
         <h2 className="mb-3 text-lg font-bold text-gray-800">🧾 ตะกร้าสินค้า</h2>
         {cart.length === 0 ? (
@@ -598,7 +678,21 @@ export default function PosClient({
                 </p>
                 <p className="text-gray-500">แต้มสะสม {selectedCustomer.points} · เครดิตค้าง ฿{Number(selectedCustomer.credit_balance).toLocaleString("th-TH")}</p>
               </div>
-              <button onClick={clearCustomer} className="text-red-500">ยกเลิก</button>
+              <div className="flex flex-col items-end gap-1">
+                <button onClick={clearCustomer} className="text-red-500">ยกเลิก</button>
+                {loyaltyRewards.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowRedeemModal(true);
+                      setRedeemMsg(null);
+                    }}
+                    className="text-brand hover:underline"
+                  >
+                    🎁 แลกแต้ม
+                  </button>
+                )}
+              </div>
             </div>
           )}
           {isWholesale && (

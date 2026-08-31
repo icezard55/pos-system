@@ -16,7 +16,10 @@ const HEADER_MAP: Record<string, string> = {
 };
 
 function emptyForm() {
-  return { id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0", low_stock_threshold: "5", image_url: "" };
+  return {
+    id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0",
+    low_stock_threshold: "5", image_url: "", variant_group: "", variant_label: "",
+  };
 }
 
 export default function ProductsClient({ initialProducts }: { initialProducts: Product[] }) {
@@ -59,6 +62,12 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     [products]
   );
 
+  const variantGroups = useMemo(() => {
+    return Array.from(new Set(products.map((p) => (p.variant_group ?? "").trim()).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b, "th")
+    );
+  }, [products]);
+
   // include a category just typed into the form even if it hasn't been saved
   // to any product yet, otherwise the dropdown has no matching <option> for
   // it and visually looks like it "disappeared" right after adding it
@@ -94,7 +103,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       id: p.id, sku: p.sku ?? "", name: p.name, category: p.category ?? "", unit: p.unit,
       cost_price: String(p.cost_price), sell_price: String(p.sell_price),
       stock_qty: String(p.stock_qty), low_stock_threshold: String(p.low_stock_threshold),
-      image_url: p.image_url ?? "",
+      image_url: p.image_url ?? "", variant_group: p.variant_group ?? "", variant_label: p.variant_label ?? "",
     });
     setAddingCategory(false);
     setNewCategory("");
@@ -201,6 +210,8 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       stock_qty: Number(form.stock_qty) || 0,
       low_stock_threshold: Number(form.low_stock_threshold) || 0,
       image_url: form.image_url || null,
+      variant_group: form.variant_group.trim() || null,
+      variant_label: form.variant_group.trim() ? (form.variant_label.trim() || null) : null,
     };
     try {
       if (form.id) {
@@ -369,7 +380,15 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                   </div>
                 </td>
                 <td className="px-4 py-3 text-gray-500">{p.sku ?? "-"}</td>
-                <td className="px-4 py-3 font-medium">{p.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  {p.name}
+                  {p.variant_group && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-normal text-indigo-600">
+                      {p.variant_group}
+                      {p.variant_label ? ` · ${p.variant_label}` : ""}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-gray-500">{p.category ?? "-"}</td>
                 <td className="px-4 py-3 text-gray-500">{p.unit}</td>
                 <td className="px-4 py-3 text-right">{Number(p.cost_price).toLocaleString("th-TH")}</td>
@@ -505,6 +524,38 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                 <label className="mb-1 block text-xs font-medium text-gray-600">แจ้งเตือนสต๊อกต่ำที่</label>
                 <input type="number" step="0.01" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })} />
               </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  กลุ่มสินค้า (สำหรับสินค้าที่มีหลายเบอร์/ตัวเลือก)
+                </label>
+                <input
+                  list="variant-group-options"
+                  placeholder="เช่น เสื้อนักเรียนชาย"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={form.variant_group}
+                  onChange={(e) => setForm({ ...form, variant_group: e.target.value })}
+                />
+                <datalist id="variant-group-options">
+                  {variantGroups.map((g) => (
+                    <option key={g} value={g} />
+                  ))}
+                </datalist>
+                <p className="mt-1 text-[11px] text-gray-400">
+                  ตั้งชื่อกลุ่มให้เหมือนกันสำหรับสินค้าที่เป็นตัวเลือกของกันและกัน (เช่น เสื้อนักเรียนชายทุกเบอร์ใช้ชื่อกลุ่มเดียวกัน)
+                  ระบบจะรวมเป็นการ์ดเดียวแล้วให้เลือกตัวเลือกตอนขาย
+                </p>
+              </div>
+              {form.variant_group.trim() && (
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-gray-600">เบอร์/ตัวเลือก</label>
+                  <input
+                    placeholder="เช่น เบอร์ 28"
+                    className="w-full rounded-lg border px-3 py-2 text-sm"
+                    value={form.variant_label}
+                    onChange={(e) => setForm({ ...form, variant_label: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
             {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
             <div className="mt-6 flex justify-end gap-2">

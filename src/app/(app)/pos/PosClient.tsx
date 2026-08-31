@@ -48,11 +48,48 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
   const [discountCodeMsg, setDiscountCodeMsg] = useState<string | null>(null);
   const [discountCodeChecking, setDiscountCodeChecking] = useState(false);
 
-  const filtered = useMemo(() => {
+  // สินค้าที่มี variant_group เดียวกันจะรวมเป็นการ์ดเดียว กดแล้วเด้งป็อปอัพเลือกเบอร์/ตัวเลือก
+  const [variantPopupGroup, setVariantPopupGroup] = useState<string | null>(null);
+
+  const groupedItems = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return products.slice(0, 30);
-    return products.filter((p) => p.name.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q)).slice(0, 30);
+    const matches = (p: Product) => !q || p.name.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q);
+
+    const groupMap = new Map<string, Product[]>();
+    for (const p of products) {
+      const g = (p.variant_group ?? "").trim();
+      if (!g) continue;
+      if (!groupMap.has(g)) groupMap.set(g, []);
+      groupMap.get(g)!.push(p);
+    }
+    for (const variants of groupMap.values()) {
+      variants.sort((a, b) => (a.variant_label ?? "").localeCompare(b.variant_label ?? "", "th", { numeric: true }));
+    }
+
+    type Item = { type: "single"; product: Product } | { type: "group"; groupName: string; variants: Product[] };
+    const items: Item[] = [];
+    const seenGroups = new Set<string>();
+    for (const p of products) {
+      const g = (p.variant_group ?? "").trim();
+      if (g) {
+        if (seenGroups.has(g)) continue;
+        seenGroups.add(g);
+        const variants = groupMap.get(g)!;
+        const groupMatch = g.toLowerCase().includes(q) || variants.some(matches);
+        if (groupMatch) items.push({ type: "group", groupName: g, variants });
+      } else if (matches(p)) {
+        items.push({ type: "single", product: p });
+      }
+    }
+    return items.slice(0, 30);
   }, [products, search]);
+
+  const popupVariants = useMemo(() => {
+    if (!variantPopupGroup) return [];
+    return products
+      .filter((p) => (p.variant_group ?? "").trim() === variantPopupGroup)
+      .sort((a, b) => (a.variant_label ?? "").localeCompare(b.variant_label ?? "", "th", { numeric: true }));
+  }, [products, variantPopupGroup]);
 
   const subtotal = cart.reduce((s, l) => s + l.product.sell_price * l.qty, 0);
   const lineDiscountsTotal = cart.reduce((s, l) => s + (Number(l.discount) || 0), 0);
@@ -285,21 +322,80 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
           {scanMsg ?? "เชื่อมเครื่องสแกนบาร์โค้ด (USB/บลูทูธ) แล้วยิงรหัสสินค้าที่ช่องนี้ได้เลย ระบบจะเพิ่มลงตะกร้าอัตโนมัติ"}
         </p>
         <div className="grid grid-cols-2 gap-3">
-          {filtered.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => addToCart(p)}
-              disabled={p.stock_qty <= 0}
-              className="rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <p className="text-sm font-semibold text-gray-800 line-clamp-2">{p.name}</p>
-              <p className="mt-1 text-xs text-gray-500">คงเหลือ {p.stock_qty} {p.unit}</p>
-              <p className="mt-1 font-bold text-brand">฿{Number(p.sell_price).toLocaleString("th-TH")}</p>
-            </button>
-          ))}
-          {filtered.length === 0 && <p className="col-span-full text-sm text-gray-400">ไม่พบสินค้า</p>}
+          {groupedItems.map((item) => {
+            if (item.type === "single") {
+              const p = item.product;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => addToCart(p)}
+                  disabled={p.stock_qty <= 0}
+                  className="rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <p className="text-sm font-semibold text-gray-800 line-clamp-2">{p.name}</p>
+                  <p className="mt-1 text-xs text-gray-500">คงเหลือ {p.stock_qty} {p.unit}</p>
+                  <p className="mt-1 font-bold text-brand">฿{Number(p.sell_price).toLocaleString("th-TH")}</p>
+                </button>
+              );
+            }
+            const { groupName, variants } = item;
+            const prices = variants.map((v) => Number(v.sell_price));
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const totalStock = variants.reduce((s, v) => s + Number(v.stock_qty), 0);
+            return (
+              <button
+                key={`group-${groupName}`}
+                onClick={() => setVariantPopupGroup(groupName)}
+                disabled={totalStock <= 0}
+                className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <p className="text-sm font-semibold text-gray-800 line-clamp-2">{groupName}</p>
+                <p className="mt-1 text-xs text-indigo-600">{variants.length} ตัวเลือก · คงเหลือรวม {totalStock}</p>
+                <p className="mt-1 font-bold text-brand">
+                  {minPrice === maxPrice
+                    ? `฿${minPrice.toLocaleString("th-TH")}`
+                    : `฿${minPrice.toLocaleString("th-TH")} - ${maxPrice.toLocaleString("th-TH")}`}
+                </p>
+              </button>
+            );
+          })}
+          {groupedItems.length === 0 && <p className="col-span-full text-sm text-gray-400">ไม่พบสินค้า</p>}
         </div>
       </div>
+
+      {variantPopupGroup && (
+        <div
+          onClick={() => setVariantPopupGroup(null)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+        >
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-800">{variantPopupGroup}</h3>
+              <button onClick={() => setVariantPopupGroup(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <p className="mb-3 text-xs text-gray-400">เลือกเบอร์/ตัวเลือกที่ต้องการเพิ่มลงตะกร้า</p>
+            <div className="grid grid-cols-2 gap-2">
+              {popupVariants.map((v) => (
+                <button
+                  key={v.id}
+                  disabled={v.stock_qty <= 0}
+                  onClick={() => {
+                    addToCart(v);
+                    setVariantPopupGroup(null);
+                  }}
+                  className="rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <p className="text-sm font-semibold text-gray-800 line-clamp-2">{v.variant_label || v.name}</p>
+                  <p className="mt-1 text-xs text-gray-500">คงเหลือ {v.stock_qty} {v.unit}</p>
+                  <p className="mt-1 font-bold text-brand">฿{Number(v.sell_price).toLocaleString("th-TH")}</p>
+                </button>
+              ))}
+              {popupVariants.length === 0 && <p className="col-span-full text-sm text-gray-400">ไม่พบตัวเลือกในกลุ่มนี้</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="rounded-2xl bg-white p-5 shadow-sm lg:sticky lg:top-6 lg:col-span-4 lg:self-start">
         <h2 className="mb-3 text-lg font-bold text-gray-800">🧾 ตะกร้าสินค้า</h2>

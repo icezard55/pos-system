@@ -86,6 +86,47 @@ export default function ShopClient({
     });
   }, [products, category, search]);
 
+  // สินค้าที่มี variant_group เดียวกันจะรวมเป็นการ์ดเดียว กดแล้วเด้งป็อปอัพเลือกเบอร์/ตัวเลือก
+  const [variantPopupGroup, setVariantPopupGroup] = useState<string | null>(null);
+
+  const groupedProducts = useMemo(() => {
+    type Item =
+      | { type: "single"; product: StorefrontProduct }
+      | { type: "group"; groupName: string; variants: StorefrontProduct[] };
+
+    const groupMap = new Map<string, StorefrontProduct[]>();
+    for (const p of filteredProducts) {
+      const g = (p.variant_group ?? "").trim();
+      if (!g) continue;
+      if (!groupMap.has(g)) groupMap.set(g, []);
+      groupMap.get(g)!.push(p);
+    }
+    for (const variants of groupMap.values()) {
+      variants.sort((a, b) => (a.variant_label ?? "").localeCompare(b.variant_label ?? "", "th", { numeric: true }));
+    }
+
+    const items: Item[] = [];
+    const seenGroups = new Set<string>();
+    for (const p of filteredProducts) {
+      const g = (p.variant_group ?? "").trim();
+      if (g) {
+        if (seenGroups.has(g)) continue;
+        seenGroups.add(g);
+        items.push({ type: "group", groupName: g, variants: groupMap.get(g)! });
+      } else {
+        items.push({ type: "single", product: p });
+      }
+    }
+    return items;
+  }, [filteredProducts]);
+
+  const popupVariants = useMemo(() => {
+    if (!variantPopupGroup) return [];
+    return products
+      .filter((p) => (p.variant_group ?? "").trim() === variantPopupGroup)
+      .sort((a, b) => (a.variant_label ?? "").localeCompare(b.variant_label ?? "", "th", { numeric: true }));
+  }, [products, variantPopupGroup]);
+
   const cartTotal = cart.reduce((s, c) => s + c.sell_price * c.qty, 0);
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
   const discountCodeAmount = appliedDiscount?.amount ?? 0;
@@ -529,40 +570,131 @@ export default function ShopClient({
       </div>
 
       <div className="grid grid-cols-2 gap-3 pb-24 sm:grid-cols-3">
-        {filteredProducts.map((p) => {
-          const inCart = cart.find((c) => c.product_id === p.id);
-          const outOfStock = Number(p.stock_qty) <= 0;
+        {groupedProducts.map((item) => {
+          if (item.type === "single") {
+            const p = item.product;
+            const inCart = cart.find((c) => c.product_id === p.id);
+            const outOfStock = Number(p.stock_qty) <= 0;
+            return (
+              <div key={p.id} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm">
+                <div className="flex aspect-square items-center justify-center bg-gray-100">
+                  {p.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-3xl text-gray-300">📦</span>
+                  )}
+                </div>
+                <div className="flex flex-1 flex-col p-2.5">
+                  <p className="line-clamp-2 min-h-[2.4em] text-xs font-medium text-gray-800">{p.name}</p>
+                  <p className="mt-1 text-sm font-bold text-indigo-700">{money(p.sell_price)} บาท</p>
+                  <p className="text-[10px] text-gray-400">
+                    {outOfStock ? "สินค้าหมด" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
+                  </p>
+                  <button
+                    onClick={() => addToCart(p)}
+                    disabled={outOfStock || (inCart ? inCart.qty >= Number(p.stock_qty) : false)}
+                    className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
+                  >
+                    {inCart ? `ในตะกร้า (${inCart.qty})` : "เพิ่มลงตะกร้า"}
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          const { groupName, variants } = item;
+          const first = variants[0];
+          const prices = variants.map((v) => Number(v.sell_price));
+          const minPrice = Math.min(...prices);
+          const maxPrice = Math.max(...prices);
+          const totalStock = variants.reduce((s, v) => s + Number(v.stock_qty), 0);
           return (
-            <div key={p.id} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm">
+            <div key={`group-${groupName}`} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm">
               <div className="flex aspect-square items-center justify-center bg-gray-100">
-                {p.image_url ? (
+                {first.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" />
+                  <img src={first.image_url} alt={groupName} className="h-full w-full object-cover" />
                 ) : (
                   <span className="text-3xl text-gray-300">📦</span>
                 )}
               </div>
               <div className="flex flex-1 flex-col p-2.5">
-                <p className="line-clamp-2 min-h-[2.4em] text-xs font-medium text-gray-800">{p.name}</p>
-                <p className="mt-1 text-sm font-bold text-indigo-700">{money(p.sell_price)} บาท</p>
+                <p className="line-clamp-2 min-h-[2.4em] text-xs font-medium text-gray-800">{groupName}</p>
+                <p className="mt-1 text-sm font-bold text-indigo-700">
+                  {minPrice === maxPrice ? `${money(minPrice)} บาท` : `${money(minPrice)} - ${money(maxPrice)} บาท`}
+                </p>
                 <p className="text-[10px] text-gray-400">
-                  {outOfStock ? "สินค้าหมด" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
+                  {totalStock <= 0 ? "สินค้าหมด" : `${variants.length} ตัวเลือก · คงเหลือรวม ${totalStock}`}
                 </p>
                 <button
-                  onClick={() => addToCart(p)}
-                  disabled={outOfStock || (inCart ? inCart.qty >= Number(p.stock_qty) : false)}
+                  onClick={() => setVariantPopupGroup(groupName)}
+                  disabled={totalStock <= 0}
                   className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
                 >
-                  {inCart ? `ในตะกร้า (${inCart.qty})` : "เพิ่มลงตะกร้า"}
+                  เลือกตัวเลือก
                 </button>
               </div>
             </div>
           );
         })}
-        {filteredProducts.length === 0 && (
+        {groupedProducts.length === 0 && (
           <p className="col-span-full py-10 text-center text-sm text-gray-400">ไม่พบสินค้า</p>
         )}
       </div>
+
+      {variantPopupGroup && (
+        <div
+          onClick={() => setVariantPopupGroup(null)}
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl"
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <h3 className="text-base font-bold text-gray-800">{variantPopupGroup}</h3>
+              <button onClick={() => setVariantPopupGroup(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <p className="mb-3 text-xs text-gray-400">เลือกเบอร์/ตัวเลือกที่ต้องการเพิ่มลงตะกร้า</p>
+            <div className="grid grid-cols-2 gap-3">
+              {popupVariants.map((v) => {
+                const inCart = cart.find((c) => c.product_id === v.id);
+                const outOfStock = Number(v.stock_qty) <= 0;
+                return (
+                  <div key={v.id} className="flex flex-col overflow-hidden rounded-xl border">
+                    <div className="flex aspect-square items-center justify-center bg-gray-100">
+                      {v.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={v.image_url} alt={v.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-2xl text-gray-300">📦</span>
+                      )}
+                    </div>
+                    <div className="flex flex-1 flex-col p-2">
+                      <p className="text-xs font-medium text-gray-800">{v.variant_label || v.name}</p>
+                      <p className="mt-1 text-sm font-bold text-indigo-700">{money(v.sell_price)} บาท</p>
+                      <p className="text-[10px] text-gray-400">
+                        {outOfStock ? "สินค้าหมด" : `คงเหลือ ${v.stock_qty} ${v.unit}`}
+                      </p>
+                      <button
+                        onClick={() => addToCart(v)}
+                        disabled={outOfStock || (inCart ? inCart.qty >= Number(v.stock_qty) : false)}
+                        className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
+                      >
+                        {inCart ? `ในตะกร้า (${inCart.qty})` : "เพิ่มลงตะกร้า"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {popupVariants.length === 0 && (
+                <p className="col-span-full text-sm text-gray-400">ไม่พบตัวเลือกในกลุ่มนี้</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {cartCount > 0 && (
         <button

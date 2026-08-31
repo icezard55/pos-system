@@ -19,6 +19,8 @@ export interface Product {
   low_stock_threshold: number;
   is_active: boolean;
   image_url: string | null;
+  variant_group: string | null;
+  variant_label: string | null;
 }
 
 export interface SaleItem {
@@ -367,6 +369,8 @@ export interface StorefrontProduct {
   sell_price: number;
   stock_qty: number;
   image_url: string | null;
+  variant_group: string | null;
+  variant_label: string | null;
 }
 
 export type OnlineOrderDeliveryMethod = "delivery" | "pickup";

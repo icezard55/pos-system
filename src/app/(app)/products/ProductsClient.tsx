@@ -52,6 +52,11 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
   const imageFileRef = useRef<HTMLInputElement>(null);
   const [barcodes, setBarcodes] = useState<string[]>([]);
   const [newBarcode, setNewBarcode] = useState("");
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkVariants, setBulkVariants] = useState<
+    { label: string; cost: string; price: string; qty: string; active: boolean }[]
+  >([]);
+  const [newBulkLabel, setNewBulkLabel] = useState("");
 
   const categories = useMemo(() => {
     return Array.from(new Set(products.map((p) => (p.category ?? "").trim()).filter(Boolean))).sort((a, b) =>
@@ -109,6 +114,9 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     setNewCategory("");
     setBarcodes([]);
     setNewBarcode("");
+    setBulkMode(false);
+    setBulkVariants([]);
+    setNewBulkLabel("");
     setShowModal(true);
   }
 
@@ -126,9 +134,31 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     setNewCategory("");
     setBarcodes([]);
     setNewBarcode("");
+    setBulkMode(false);
+    setBulkVariants([]);
+    setNewBulkLabel("");
     setShowModal(true);
     const { data } = await supabase.from("product_barcodes").select("barcode").eq("product_id", p.id).order("barcode");
     setBarcodes((data ?? []).map((r) => r.barcode));
+  }
+
+  function addBulkVariant() {
+    const label = newBulkLabel.trim();
+    if (!label) return;
+    if (bulkVariants.some((v) => v.label === label)) return;
+    setBulkVariants((prev) => [
+      ...prev,
+      { label, cost: form.cost_price || "0", price: form.sell_price || "0", qty: "0", active: true },
+    ]);
+    setNewBulkLabel("");
+  }
+
+  function removeBulkVariant(label: string) {
+    setBulkVariants((prev) => prev.filter((v) => v.label !== label));
+  }
+
+  function updateBulkVariant(label: string, patch: Partial<{ cost: string; price: string; qty: string; active: boolean }>) {
+    setBulkVariants((prev) => prev.map((v) => (v.label === label ? { ...v, ...patch } : v)));
   }
 
   function addBarcode() {
@@ -232,6 +262,52 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     e.preventDefault();
     setBusy(true);
     setMsg(null);
+
+    if (bulkMode && !form.id) {
+      if (!form.variant_group.trim()) {
+        setMsg("กรุณาระบุกลุ่มสินค้า เช่น เสื้อนักเรียนชาย");
+        setBusy(false);
+        return;
+      }
+      if (bulkVariants.length === 0) {
+        setMsg("กรุณาเพิ่มตัวเลือกอย่างน้อย 1 รายการ เช่น เบอร์ 28");
+        setBusy(false);
+        return;
+      }
+      try {
+        const rows = bulkVariants.map((v) => ({
+          sku: null,
+          name: `${form.name} ${v.label}`.trim(),
+          category: form.category || null,
+          unit: form.unit || "ชิ้น",
+          cost_price: Number(v.cost) || 0,
+          sell_price: Number(v.price) || 0,
+          stock_qty: Number(v.qty) || 0,
+          low_stock_threshold: Number(form.low_stock_threshold) || 0,
+          image_url: form.image_url || null,
+          variant_group: form.variant_group.trim(),
+          variant_label: v.label,
+          storage_location: form.storage_location.trim() || null,
+          no_stock_tracking: form.no_stock_tracking,
+          card_color: form.card_color || null,
+          receipt_name: form.receipt_name.trim() || null,
+          sort_order: Number(form.sort_order) || 0,
+          expiry_date: form.expiry_date || null,
+          wholesale_price: form.wholesale_price.trim() ? Number(form.wholesale_price) : null,
+          is_active: v.active,
+        }));
+        const { error } = await supabase.from("products").insert(rows);
+        if (error) throw error;
+        setShowModal(false);
+        await refresh();
+      } catch (err: any) {
+        setMsg(err.message ?? "บันทึกไม่สำเร็จ");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     const payload = {
       sku: form.sku || null,
       name: form.name,
@@ -589,27 +665,49 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                 <label className="mb-1 block text-xs font-medium text-gray-600">หน่วยนับ</label>
                 <input className="w-full rounded-lg border px-3 py-2 text-sm" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">ราคาทุน</label>
-                <input type="number" step="0.01" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">ราคาขาย *</label>
-                <input required type="number" step="0.01" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.sell_price} onChange={(e) => setForm({ ...form, sell_price: e.target.value })} />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-gray-600">จำนวนคงเหลือ</label>
-                <input type="number" step="0.01" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.stock_qty} onChange={(e) => setForm({ ...form, stock_qty: e.target.value })} />
-              </div>
+              {!bulkMode && (
+                <>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">ราคาทุน</label>
+                    <input type="number" step="0.01" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">ราคาขาย *</label>
+                    <input required type="number" step="0.01" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.sell_price} onChange={(e) => setForm({ ...form, sell_price: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">จำนวนคงเหลือ</label>
+                    <input type="number" step="0.01" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.stock_qty} onChange={(e) => setForm({ ...form, stock_qty: e.target.value })} />
+                  </div>
+                </>
+              )}
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">แจ้งเตือนสต๊อกต่ำที่</label>
                 <input type="number" step="0.01" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.low_stock_threshold} onChange={(e) => setForm({ ...form, low_stock_threshold: e.target.value })} />
               </div>
+
+              {!form.id && (
+                <div className="col-span-2 flex items-center justify-between rounded-lg border border-dashed p-2">
+                  <div>
+                    <p className="text-xs font-medium text-gray-700">สินค้ามีหลายตัวเลือก (เบอร์/สี/ไซส์)</p>
+                    <p className="text-[11px] text-gray-400">เพิ่มหลายตัวเลือกพร้อมต้นทุน/ราคา/สต๊อกแยกแต่ละตัวในครั้งเดียว</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBulkMode((v) => !v)}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition ${bulkMode ? "bg-brand" : "bg-gray-300"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${bulkMode ? "left-[22px]" : "left-0.5"}`} />
+                  </button>
+                </div>
+              )}
+
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-medium text-gray-600">
-                  กลุ่มสินค้า (สำหรับสินค้าที่มีหลายเบอร์/ตัวเลือก)
+                  กลุ่มสินค้า (สำหรับสินค้าที่มีหลายเบอร์/ตัวเลือก){bulkMode && " *"}
                 </label>
                 <input
+                  required={bulkMode}
                   list="variant-group-options"
                   placeholder="เช่น เสื้อนักเรียนชาย"
                   className="w-full rounded-lg border px-3 py-2 text-sm"
@@ -626,7 +724,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                   ระบบจะรวมเป็นการ์ดเดียวแล้วให้เลือกตัวเลือกตอนขาย
                 </p>
               </div>
-              {form.variant_group.trim() && (
+              {form.variant_group.trim() && !bulkMode && (
                 <div className="col-span-2">
                   <label className="mb-1 block text-xs font-medium text-gray-600">เบอร์/ตัวเลือก</label>
                   <input
@@ -635,6 +733,106 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                     value={form.variant_label}
                     onChange={(e) => setForm({ ...form, variant_label: e.target.value })}
                   />
+                </div>
+              )}
+
+              {bulkMode && !form.id && (
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    ตัวเลือกสินค้า (เบอร์/สี/ไซส์) พร้อมราคาและสต๊อก
+                  </label>
+                  <div className="flex gap-1">
+                    <input
+                      placeholder="เช่น เบอร์ 28"
+                      className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                      value={newBulkLabel}
+                      onChange={(e) => setNewBulkLabel(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addBulkVariant();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={addBulkVariant}
+                      className="whitespace-nowrap rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
+                    >
+                      + เพิ่มตัวเลือก
+                    </button>
+                  </div>
+
+                  {bulkVariants.length > 0 && (
+                    <div className="mt-2 overflow-x-auto rounded-lg border">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b bg-gray-50 text-left text-gray-500">
+                            <th className="px-2 py-1.5">ตัวเลือก</th>
+                            <th className="px-2 py-1.5 text-right">ต้นทุน</th>
+                            <th className="px-2 py-1.5 text-right">ราคา</th>
+                            <th className="px-2 py-1.5 text-right">จำนวน</th>
+                            <th className="px-2 py-1.5 text-center">แสดงขาย</th>
+                            <th className="px-2 py-1.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkVariants.map((v) => (
+                            <tr key={v.label} className="border-b last:border-0">
+                              <td className="px-2 py-1.5 font-medium text-gray-700">{v.label}</td>
+                              <td className="px-2 py-1.5">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={v.cost}
+                                  onChange={(e) => updateBulkVariant(v.label, { cost: e.target.value })}
+                                  className="w-20 rounded border px-1.5 py-1 text-right text-xs"
+                                />
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={v.price}
+                                  onChange={(e) => updateBulkVariant(v.label, { price: e.target.value })}
+                                  className="w-20 rounded border px-1.5 py-1 text-right text-xs"
+                                />
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={v.qty}
+                                  onChange={(e) => updateBulkVariant(v.label, { qty: e.target.value })}
+                                  className="w-16 rounded border px-1.5 py-1 text-right text-xs"
+                                />
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={v.active}
+                                  onChange={(e) => updateBulkVariant(v.label, { active: e.target.checked })}
+                                />
+                              </td>
+                              <td className="px-2 py-1.5 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => removeBulkVariant(v.label)}
+                                  className="text-red-500 hover:text-red-700"
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <p className="mt-1 text-[11px] text-gray-400">
+                    ระบบจะสร้างสินค้าแยกให้ทีละตัวเลือก โดยตั้งชื่อว่า "{(form.name || "ชื่อสินค้า").trim()} + ตัวเลือก" เช่น "
+                    {(form.name || "เสื้อนักเรียนชาย").trim()} เบอร์ 28" — แก้ไขชื่อ/บาร์โค้ด/รูปของแต่ละตัวเลือกทีหลังได้จากปุ่ม "แก้ไข" ในตาราง
+                  </p>
                 </div>
               )}
 
@@ -727,40 +925,42 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                 </div>
               </div>
 
-              <div className="col-span-2">
-                <label className="mb-1 block text-xs font-medium text-gray-600">บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU)</label>
-                <div className="flex gap-1">
-                  <input
-                    placeholder="สแกนหรือพิมพ์บาร์โค้ด แล้วกด + เพิ่ม"
-                    className="flex-1 rounded-lg border px-3 py-2 text-sm"
-                    value={newBarcode}
-                    onChange={(e) => setNewBarcode(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addBarcode();
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={addBarcode}
-                    className="whitespace-nowrap rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
-                  >
-                    + เพิ่ม
-                  </button>
-                </div>
-                {barcodes.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {barcodes.map((b) => (
-                      <span key={b} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
-                        {b}
-                        <button type="button" onClick={() => removeBarcode(b)} className="text-gray-400 hover:text-red-500">✕</button>
-                      </span>
-                    ))}
+              {!bulkMode && (
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-gray-600">บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU)</label>
+                  <div className="flex gap-1">
+                    <input
+                      placeholder="สแกนหรือพิมพ์บาร์โค้ด แล้วกด + เพิ่ม"
+                      className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                      value={newBarcode}
+                      onChange={(e) => setNewBarcode(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addBarcode();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={addBarcode}
+                      className="whitespace-nowrap rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
+                    >
+                      + เพิ่ม
+                    </button>
                   </div>
-                )}
-              </div>
+                  {barcodes.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {barcodes.map((b) => (
+                        <span key={b} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                          {b}
+                          <button type="button" onClick={() => removeBarcode(b)} className="text-gray-400 hover:text-red-500">✕</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
             <div className="mt-6 flex justify-end gap-2">

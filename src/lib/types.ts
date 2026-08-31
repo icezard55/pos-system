@@ -21,7 +21,31 @@ export interface Product {
   image_url: string | null;
   variant_group: string | null;
   variant_label: string | null;
+  storage_location: string | null;
+  no_stock_tracking: boolean;
+  card_color: string | null;
+  receipt_name: string | null;
+  sort_order: number;
 }
+
+export interface ProductBarcode {
+  id: string;
+  product_id: string;
+  barcode: string;
+  created_at: string;
+}
+
+export const PRODUCT_CARD_COLORS: { key: string; label: string; hex: string }[] = [
+  { key: "gray", label: "เทา", hex: "#9CA3AF" },
+  { key: "red", label: "แดง", hex: "#F87171" },
+  { key: "orange", label: "ส้ม", hex: "#FB923C" },
+  { key: "yellow", label: "เหลือง", hex: "#FACC15" },
+  { key: "green", label: "เขียว", hex: "#4ADE80" },
+  { key: "teal", label: "เขียวมิ้นท์", hex: "#2DD4BF" },
+  { key: "blue", label: "ฟ้า", hex: "#60A5FA" },
+  { key: "purple", label: "ม่วง", hex: "#A78BFA" },
+  { key: "pink", label: "ชมพู", hex: "#F472B6" },
+];
 
 export interface SaleItem {
   id: string;
@@ -371,6 +395,8 @@ export interface StorefrontProduct {
   image_url: string | null;
   variant_group: string | null;
   variant_label: string | null;
+  card_color: string | null;
+  no_stock_tracking: boolean;
 }
 
 export type OnlineOrderDeliveryMethod = "delivery" | "pickup";
@@ -446,4 +472,5 @@ export interface CartItem {
   sell_price: number;
   stock_qty: number;
   qty: number;
+  no_stock_tracking?: boolean;
 }

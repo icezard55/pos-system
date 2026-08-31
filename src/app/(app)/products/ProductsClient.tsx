@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
 import type { Product } from "@/lib/types";
+import { PRODUCT_CARD_COLORS } from "@/lib/types";
 
 const HEADER_MAP: Record<string, string> = {
   sku: "sku", "รหัส": "sku", "รหัสสินค้า": "sku",
@@ -19,6 +20,7 @@ function emptyForm() {
   return {
     id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0",
     low_stock_threshold: "5", image_url: "", variant_group: "", variant_label: "",
+    storage_location: "", no_stock_tracking: false, card_color: "", receipt_name: "", sort_order: "0",
   };
 }
 
@@ -40,6 +42,8 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
   const [catMsg, setCatMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const imageFileRef = useRef<HTMLInputElement>(null);
+  const [barcodes, setBarcodes] = useState<string[]>([]);
+  const [newBarcode, setNewBarcode] = useState("");
 
   const categories = useMemo(() => {
     return Array.from(new Set(products.map((p) => (p.category ?? "").trim()).filter(Boolean))).sort((a, b) =>
@@ -95,19 +99,38 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     setForm(emptyForm());
     setAddingCategory(false);
     setNewCategory("");
+    setBarcodes([]);
+    setNewBarcode("");
     setShowModal(true);
   }
 
-  function openEdit(p: Product) {
+  async function openEdit(p: Product) {
     setForm({
       id: p.id, sku: p.sku ?? "", name: p.name, category: p.category ?? "", unit: p.unit,
       cost_price: String(p.cost_price), sell_price: String(p.sell_price),
       stock_qty: String(p.stock_qty), low_stock_threshold: String(p.low_stock_threshold),
       image_url: p.image_url ?? "", variant_group: p.variant_group ?? "", variant_label: p.variant_label ?? "",
+      storage_location: p.storage_location ?? "", no_stock_tracking: p.no_stock_tracking ?? false,
+      card_color: p.card_color ?? "", receipt_name: p.receipt_name ?? "", sort_order: String(p.sort_order ?? 0),
     });
     setAddingCategory(false);
     setNewCategory("");
+    setBarcodes([]);
+    setNewBarcode("");
     setShowModal(true);
+    const { data } = await supabase.from("product_barcodes").select("barcode").eq("product_id", p.id).order("barcode");
+    setBarcodes((data ?? []).map((r) => r.barcode));
+  }
+
+  function addBarcode() {
+    const b = newBarcode.trim();
+    if (!b) return;
+    if (!barcodes.includes(b)) setBarcodes((prev) => [...prev, b]);
+    setNewBarcode("");
+  }
+
+  function removeBarcode(b: string) {
+    setBarcodes((prev) => prev.filter((x) => x !== b));
   }
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -212,15 +235,33 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       image_url: form.image_url || null,
       variant_group: form.variant_group.trim() || null,
       variant_label: form.variant_group.trim() ? (form.variant_label.trim() || null) : null,
+      storage_location: form.storage_location.trim() || null,
+      no_stock_tracking: form.no_stock_tracking,
+      card_color: form.card_color || null,
+      receipt_name: form.receipt_name.trim() || null,
+      sort_order: Number(form.sort_order) || 0,
     };
     try {
+      let productId = form.id;
       if (form.id) {
         const { error } = await supabase.from("products").update(payload).eq("id", form.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("products").insert(payload);
+        const { data, error } = await supabase.from("products").insert(payload).select("id").single();
         if (error) throw error;
+        productId = data.id;
       }
+
+      // sync บาร์โค้ดหลายเลข: ลบของเดิมทั้งหมดแล้วใส่ชุดปัจจุบัน (ง่ายกว่าการ diff)
+      await supabase.from("product_barcodes").delete().eq("product_id", productId);
+      const cleanBarcodes = Array.from(new Set(barcodes.map((b) => b.trim()).filter(Boolean)));
+      if (cleanBarcodes.length > 0) {
+        const { error: bcErr } = await supabase
+          .from("product_barcodes")
+          .insert(cleanBarcodes.map((barcode) => ({ product_id: productId, barcode })));
+        if (bcErr) throw bcErr;
+      }
+
       setShowModal(false);
       await refresh();
     } catch (err: any) {
@@ -370,11 +411,14 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
             {filtered.map((p) => (
               <tr key={p.id} className="border-b last:border-0 hover:bg-gray-50">
                 <td className="px-4 py-3">
-                  <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-gray-100">
+                  <div
+                    className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-gray-100"
+                    style={!p.image_url && p.card_color ? { backgroundColor: p.card_color } : undefined}
+                  >
                     {p.image_url ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={p.image_url} alt="" className="h-full w-full object-cover" />
-                    ) : (
+                    ) : p.card_color ? null : (
                       <span className="text-xs text-gray-300">📦</span>
                     )}
                   </div>
@@ -386,6 +430,16 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                     <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-normal text-indigo-600">
                       {p.variant_group}
                       {p.variant_label ? ` · ${p.variant_label}` : ""}
+                    </span>
+                  )}
+                  {p.no_stock_tracking && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-normal text-amber-600">
+                      ไม่ตัดสต๊อก
+                    </span>
+                  )}
+                  {p.storage_location && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-normal text-gray-500">
+                      📍 {p.storage_location}
                     </span>
                   )}
                 </td>
@@ -556,6 +610,109 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
                   />
                 </div>
               )}
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">ที่อยู่จัดเก็บสินค้า</label>
+                <input
+                  placeholder="เช่น ชั้น A2, คลัง 1"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={form.storage_location}
+                  onChange={(e) => setForm({ ...form, storage_location: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">ลำดับการแสดงผลหน้าขาย</label>
+                <input
+                  type="number"
+                  step="1"
+                  placeholder="0"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={form.sort_order}
+                  onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
+                />
+                <p className="mt-1 text-[11px] text-gray-400">เลขน้อยแสดงก่อน ค่าเริ่มต้น 0</p>
+              </div>
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs font-medium text-gray-600">ชื่อแยกสำหรับใบเสร็จ (ไม่บังคับ)</label>
+                <input
+                  placeholder="ถ้าไม่กรอกจะใช้ชื่อสินค้าปกติ"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={form.receipt_name}
+                  onChange={(e) => setForm({ ...form, receipt_name: e.target.value })}
+                />
+              </div>
+              <div className="col-span-2 flex items-center gap-2 rounded-lg border border-dashed p-2">
+                <input
+                  id="no_stock_tracking"
+                  type="checkbox"
+                  checked={form.no_stock_tracking}
+                  onChange={(e) => setForm({ ...form, no_stock_tracking: e.target.checked })}
+                />
+                <label htmlFor="no_stock_tracking" className="text-xs text-gray-600">
+                  ไม่ตัดสต๊อก (สำหรับสินค้าบริการ/รายการที่ไม่ต้องนับจำนวนคงเหลือ)
+                </label>
+              </div>
+
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs font-medium text-gray-600">สีการ์ด (ใช้แทนรูปภาพถ้าไม่มีรูป)</label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, card_color: "" })}
+                    className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs text-gray-400 ${
+                      !form.card_color ? "border-brand" : "border-gray-200"
+                    }`}
+                    title="ไม่ใช้สี"
+                  >
+                    ✕
+                  </button>
+                  {PRODUCT_CARD_COLORS.map((c) => (
+                    <button
+                      key={c.key}
+                      type="button"
+                      onClick={() => setForm({ ...form, card_color: c.hex })}
+                      className={`h-8 w-8 rounded-full border-2 ${form.card_color === c.hex ? "border-brand" : "border-transparent"}`}
+                      style={{ backgroundColor: c.hex }}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs font-medium text-gray-600">บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU)</label>
+                <div className="flex gap-1">
+                  <input
+                    placeholder="สแกนหรือพิมพ์บาร์โค้ด แล้วกด + เพิ่ม"
+                    className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                    value={newBarcode}
+                    onChange={(e) => setNewBarcode(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addBarcode();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={addBarcode}
+                    className="whitespace-nowrap rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
+                  >
+                    + เพิ่ม
+                  </button>
+                </div>
+                {barcodes.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {barcodes.map((b) => (
+                      <span key={b} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                        {b}
+                        <button type="button" onClick={() => removeBarcode(b)} className="text-gray-400 hover:text-red-500">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
             <div className="mt-6 flex justify-end gap-2">

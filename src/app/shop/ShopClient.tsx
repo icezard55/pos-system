@@ -177,7 +177,7 @@ export default function ShopClient({
 
   function addToCart(p: StorefrontProduct) {
     const existing = cart.find((c) => c.product_id === p.id);
-    const maxQty = Math.floor(Number(p.stock_qty));
+    const maxQty = p.no_stock_tracking ? Infinity : Math.floor(Number(p.stock_qty));
     if (maxQty <= 0) return;
     if (existing) {
       if (existing.qty >= maxQty) return;
@@ -185,7 +185,10 @@ export default function ShopClient({
     } else {
       updateCart([
         ...cart,
-        { product_id: p.id, name: p.name, unit: p.unit, sell_price: Number(p.sell_price), stock_qty: maxQty, qty: 1 },
+        {
+          product_id: p.id, name: p.name, unit: p.unit, sell_price: Number(p.sell_price), stock_qty: maxQty, qty: 1,
+          no_stock_tracking: p.no_stock_tracking,
+        },
       ]);
     }
   }
@@ -514,7 +517,7 @@ export default function ShopClient({
                   <span className="w-6 text-center text-sm">{c.qty}</span>
                   <button
                     onClick={() => setQty(c.product_id, c.qty + 1)}
-                    disabled={c.qty >= c.stock_qty}
+                    disabled={!c.no_stock_tracking && c.qty >= c.stock_qty}
                     className="h-7 w-7 rounded-full border text-gray-600 disabled:opacity-30"
                   >
                     +
@@ -574,14 +577,17 @@ export default function ShopClient({
           if (item.type === "single") {
             const p = item.product;
             const inCart = cart.find((c) => c.product_id === p.id);
-            const outOfStock = Number(p.stock_qty) <= 0;
+            const outOfStock = !p.no_stock_tracking && Number(p.stock_qty) <= 0;
             return (
               <div key={p.id} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm">
-                <div className="flex aspect-square items-center justify-center bg-gray-100">
+                <div
+                  className="flex aspect-square items-center justify-center bg-gray-100"
+                  style={!p.image_url && p.card_color ? { backgroundColor: p.card_color } : undefined}
+                >
                   {p.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" />
-                  ) : (
+                  ) : p.card_color ? null : (
                     <span className="text-3xl text-gray-300">📦</span>
                   )}
                 </div>
@@ -589,11 +595,11 @@ export default function ShopClient({
                   <p className="line-clamp-2 min-h-[2.4em] text-xs font-medium text-gray-800">{p.name}</p>
                   <p className="mt-1 text-sm font-bold text-indigo-700">{money(p.sell_price)} บาท</p>
                   <p className="text-[10px] text-gray-400">
-                    {outOfStock ? "สินค้าหมด" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
+                    {p.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
                   </p>
                   <button
                     onClick={() => addToCart(p)}
-                    disabled={outOfStock || (inCart ? inCart.qty >= Number(p.stock_qty) : false)}
+                    disabled={outOfStock || (inCart && !p.no_stock_tracking ? inCart.qty >= Number(p.stock_qty) : false)}
                     className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
                   >
                     {inCart ? `ในตะกร้า (${inCart.qty})` : "เพิ่มลงตะกร้า"}
@@ -609,13 +615,17 @@ export default function ShopClient({
           const minPrice = Math.min(...prices);
           const maxPrice = Math.max(...prices);
           const totalStock = variants.reduce((s, v) => s + Number(v.stock_qty), 0);
+          const anyAlwaysAvailable = variants.some((v) => v.no_stock_tracking);
           return (
             <div key={`group-${groupName}`} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm">
-              <div className="flex aspect-square items-center justify-center bg-gray-100">
+              <div
+                className="flex aspect-square items-center justify-center bg-gray-100"
+                style={!first.image_url && first.card_color ? { backgroundColor: first.card_color } : undefined}
+              >
                 {first.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={first.image_url} alt={groupName} className="h-full w-full object-cover" />
-                ) : (
+                ) : first.card_color ? null : (
                   <span className="text-3xl text-gray-300">📦</span>
                 )}
               </div>
@@ -625,11 +635,11 @@ export default function ShopClient({
                   {minPrice === maxPrice ? `${money(minPrice)} บาท` : `${money(minPrice)} - ${money(maxPrice)} บาท`}
                 </p>
                 <p className="text-[10px] text-gray-400">
-                  {totalStock <= 0 ? "สินค้าหมด" : `${variants.length} ตัวเลือก · คงเหลือรวม ${totalStock}`}
+                  {totalStock <= 0 && !anyAlwaysAvailable ? "สินค้าหมด" : `${variants.length} ตัวเลือก · คงเหลือรวม ${totalStock}`}
                 </p>
                 <button
                   onClick={() => setVariantPopupGroup(groupName)}
-                  disabled={totalStock <= 0}
+                  disabled={!anyAlwaysAvailable && totalStock <= 0}
                   className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
                 >
                   เลือกตัวเลือก
@@ -660,14 +670,17 @@ export default function ShopClient({
             <div className="grid grid-cols-2 gap-3">
               {popupVariants.map((v) => {
                 const inCart = cart.find((c) => c.product_id === v.id);
-                const outOfStock = Number(v.stock_qty) <= 0;
+                const outOfStock = !v.no_stock_tracking && Number(v.stock_qty) <= 0;
                 return (
                   <div key={v.id} className="flex flex-col overflow-hidden rounded-xl border">
-                    <div className="flex aspect-square items-center justify-center bg-gray-100">
+                    <div
+                      className="flex aspect-square items-center justify-center bg-gray-100"
+                      style={!v.image_url && v.card_color ? { backgroundColor: v.card_color } : undefined}
+                    >
                       {v.image_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={v.image_url} alt={v.name} className="h-full w-full object-cover" />
-                      ) : (
+                      ) : v.card_color ? null : (
                         <span className="text-2xl text-gray-300">📦</span>
                       )}
                     </div>
@@ -675,11 +688,11 @@ export default function ShopClient({
                       <p className="text-xs font-medium text-gray-800">{v.variant_label || v.name}</p>
                       <p className="mt-1 text-sm font-bold text-indigo-700">{money(v.sell_price)} บาท</p>
                       <p className="text-[10px] text-gray-400">
-                        {outOfStock ? "สินค้าหมด" : `คงเหลือ ${v.stock_qty} ${v.unit}`}
+                        {v.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `คงเหลือ ${v.stock_qty} ${v.unit}`}
                       </p>
                       <button
                         onClick={() => addToCart(v)}
-                        disabled={outOfStock || (inCart ? inCart.qty >= Number(v.stock_qty) : false)}
+                        disabled={outOfStock || (inCart && !v.no_stock_tracking ? inCart.qty >= Number(v.stock_qty) : false)}
                         className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
                       >
                         {inCart ? `ในตะกร้า (${inCart.qty})` : "เพิ่มลงตะกร้า"}

@@ -11,7 +11,20 @@ interface PaymentRow {
   received?: string;
 }
 
-export default function PosClient({ products, showVatOnReceipt = true }: { products: Product[]; showVatOnReceipt?: boolean }) {
+interface BarcodeRow {
+  product_id: string;
+  barcode: string;
+}
+
+export default function PosClient({
+  products,
+  barcodes = [],
+  showVatOnReceipt = true,
+}: {
+  products: Product[];
+  barcodes?: BarcodeRow[];
+  showVatOnReceipt?: boolean;
+}) {
   const supabase = createClient();
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -90,6 +103,17 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
       .filter((p) => (p.variant_group ?? "").trim() === variantPopupGroup)
       .sort((a, b) => (a.variant_label ?? "").localeCompare(b.variant_label ?? "", "th", { numeric: true }));
   }, [products, variantPopupGroup]);
+
+  // แผนที่บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU) -> สินค้า สำหรับตอนยิงสแกน
+  const barcodeMap = useMemo(() => {
+    const map = new Map<string, Product>();
+    const byId = new Map(products.map((p) => [p.id, p]));
+    for (const row of barcodes) {
+      const p = byId.get(row.product_id);
+      if (p) map.set(row.barcode.trim().toLowerCase(), p);
+    }
+    return map;
+  }, [products, barcodes]);
 
   const subtotal = cart.reduce((s, l) => s + l.product.sell_price * l.qty, 0);
   const lineDiscountsTotal = cart.reduce((s, l) => s + (Number(l.discount) || 0), 0);
@@ -221,9 +245,9 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
     if (e.key !== "Enter") return;
     const code = search.trim().toLowerCase();
     if (!code) return;
-    const exact = products.find((p) => (p.sku ?? "").toLowerCase() === code);
+    const exact = products.find((p) => (p.sku ?? "").toLowerCase() === code) ?? barcodeMap.get(code);
     if (exact) {
-      if (exact.stock_qty <= 0) {
+      if (!exact.no_stock_tracking && exact.stock_qty <= 0) {
         setScanMsg(`"${exact.name}" สินค้าหมดสต๊อก`);
       } else {
         addToCart(exact);
@@ -325,15 +349,19 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
           {groupedItems.map((item) => {
             if (item.type === "single") {
               const p = item.product;
+              const outOfStock = !p.no_stock_tracking && p.stock_qty <= 0;
               return (
                 <button
                   key={p.id}
                   onClick={() => addToCart(p)}
-                  disabled={p.stock_qty <= 0}
+                  disabled={outOfStock}
+                  style={p.card_color ? { backgroundColor: `${p.card_color}22`, borderColor: p.card_color } : undefined}
                   className="rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <p className="text-sm font-semibold text-gray-800 line-clamp-2">{p.name}</p>
-                  <p className="mt-1 text-xs text-gray-500">คงเหลือ {p.stock_qty} {p.unit}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {p.no_stock_tracking ? "พร้อมขายเสมอ" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
+                  </p>
                   <p className="mt-1 font-bold text-brand">฿{Number(p.sell_price).toLocaleString("th-TH")}</p>
                 </button>
               );
@@ -343,11 +371,12 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
             const minPrice = Math.min(...prices);
             const maxPrice = Math.max(...prices);
             const totalStock = variants.reduce((s, v) => s + Number(v.stock_qty), 0);
+            const anyAlwaysAvailable = variants.some((v) => v.no_stock_tracking);
             return (
               <button
                 key={`group-${groupName}`}
                 onClick={() => setVariantPopupGroup(groupName)}
-                disabled={totalStock <= 0}
+                disabled={!anyAlwaysAvailable && totalStock <= 0}
                 className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <p className="text-sm font-semibold text-gray-800 line-clamp-2">{groupName}</p>
@@ -379,7 +408,7 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
               {popupVariants.map((v) => (
                 <button
                   key={v.id}
-                  disabled={v.stock_qty <= 0}
+                  disabled={!v.no_stock_tracking && v.stock_qty <= 0}
                   onClick={() => {
                     addToCart(v);
                     setVariantPopupGroup(null);
@@ -387,7 +416,9 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
                   className="rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-brand hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <p className="text-sm font-semibold text-gray-800 line-clamp-2">{v.variant_label || v.name}</p>
-                  <p className="mt-1 text-xs text-gray-500">คงเหลือ {v.stock_qty} {v.unit}</p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {v.no_stock_tracking ? "พร้อมขายเสมอ" : `คงเหลือ ${v.stock_qty} ${v.unit}`}
+                  </p>
                   <p className="mt-1 font-bold text-brand">฿{Number(v.sell_price).toLocaleString("th-TH")}</p>
                 </button>
               ))}
@@ -437,7 +468,7 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
                           <input
                             type="number"
                             min={0}
-                            max={l.product.stock_qty}
+                            max={l.product.no_stock_tracking ? undefined : l.product.stock_qty}
                             value={l.qty}
                             onChange={(e) => updateQty(l.product.id, Number(e.target.value))}
                             className="w-12 rounded border px-1 py-1 text-center text-sm font-semibold"
@@ -445,7 +476,7 @@ export default function PosClient({ products, showVatOnReceipt = true }: { produ
                           <button
                             type="button"
                             onClick={() => updateQty(l.product.id, l.qty + 1)}
-                            disabled={l.qty >= l.product.stock_qty}
+                            disabled={!l.product.no_stock_tracking && l.qty >= l.product.stock_qty}
                             className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded border border-gray-300 bg-white text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
                           >
                             +

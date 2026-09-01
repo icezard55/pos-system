@@ -597,10 +597,11 @@ export default function PosClient({
                           <input
                             type="number"
                             min={0}
+                            step="0.01"
                             max={l.product.no_stock_tracking ? undefined : l.product.stock_qty}
                             value={l.qty}
                             onChange={(e) => updateQty(l.product.id, Number(e.target.value))}
-                            className="w-12 rounded border px-1 py-1 text-center text-sm font-semibold"
+                            className="w-14 rounded border px-1 py-1 text-center text-sm font-semibold"
                           />
                           <button
                             type="button"

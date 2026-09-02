@@ -54,9 +54,11 @@ const TABS: { key: "all" | PayableStatus; label: string }[] = [
 export default function AccountsPayableClient({
   payables,
   receivedPOs,
+  shopId,
 }: {
   payables: Payable[];
   receivedPOs: ReceivedPO[];
+  shopId: string;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -129,6 +131,7 @@ export default function AccountsPayableClient({
     setError(null);
     try {
       const { error } = await supabase.from("payables").insert({
+        shop_id: shopId,
         creditor_name: creditorName.trim(),
         amount: Number(amount),
         due_date: dueDate || null,

@@ -32,7 +32,7 @@ function daysUntil(dateStr: string) {
   return Math.round((d.getTime() - today.getTime()) / 86400000);
 }
 
-export default function ProductsClient({ initialProducts }: { initialProducts: Product[] }) {
+export default function ProductsClient({ initialProducts, shopId }: { initialProducts: Product[]; shopId: string }) {
   const supabase = createClient();
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [search, setSearch] = useState("");
@@ -276,6 +276,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       }
       try {
         const rows = bulkVariants.map((v) => ({
+          shop_id: shopId,
           sku: null,
           name: `${form.name} ${v.label}`.trim(),
           category: form.category || null,
@@ -309,6 +310,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
     }
 
     const payload = {
+      shop_id: shopId,
       sku: form.sku || null,
       name: form.name,
       category: form.category || null,
@@ -345,7 +347,7 @@ export default function ProductsClient({ initialProducts }: { initialProducts: P
       if (cleanBarcodes.length > 0) {
         const { error: bcErr } = await supabase
           .from("product_barcodes")
-          .insert(cleanBarcodes.map((barcode) => ({ product_id: productId, barcode })));
+          .insert(cleanBarcodes.map((barcode) => ({ shop_id: shopId, product_id: productId, barcode })));
         if (bcErr) throw bcErr;
       }
 

@@ -34,10 +34,14 @@ function money(n: number) {
 type View = "browse" | "cart" | "checkout" | "done";
 
 export default function ShopClient({
+  shopId,
+  shopSlug,
   products,
   shopName,
   promotions = [],
 }: {
+  shopId: string;
+  shopSlug: string;
   products: StorefrontProduct[];
   shopName: string;
   promotions?: ActivePromotion[];
@@ -165,6 +169,7 @@ export default function ShopClient({
     setDiscountCodeChecking(true);
     try {
       const { data, error } = await supabase.rpc("validate_discount_code", {
+        p_shop_id: shopId,
         p_code: discountCode.trim(),
         p_order_amount: netCartTotal,
       });
@@ -231,6 +236,7 @@ export default function ShopClient({
     try {
       const items = cart.map((c) => ({ product_id: c.product_id, qty: c.qty }));
       const { data, error } = await supabase.rpc("place_online_order", {
+        p_shop_id: shopId,
         p_customer_name: customerName,
         p_customer_phone: customerPhone,
         p_customer_address: deliveryMethod === "delivery" ? customerAddress : null,
@@ -270,6 +276,7 @@ export default function ShopClient({
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from("shop-uploads").getPublicUrl(path);
       const { error: rpcErr } = await supabase.rpc("attach_payment_slip", {
+        p_shop_id: shopId,
         p_order_id: placedOrder.order_id,
         p_customer_phone: customerPhone,
         p_slip_url: pub.publicUrl,
@@ -324,7 +331,7 @@ export default function ShopClient({
 
         <div className="mt-5 flex gap-2">
           <a
-            href={`/shop/track?order_no=${encodeURIComponent(placedOrder.order_no)}&phone=${encodeURIComponent(customerPhone)}`}
+            href={`/shop/${shopSlug}/track?order_no=${encodeURIComponent(placedOrder.order_no)}&phone=${encodeURIComponent(customerPhone)}`}
             className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             ติดตามคำสั่งซื้อ

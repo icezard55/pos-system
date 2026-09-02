@@ -90,7 +90,7 @@ function OrderCard({ result, defaultOpen }: { result: LookupResult; defaultOpen:
   );
 }
 
-export default function TrackClient({ initialOrderNo, initialPhone }: { initialOrderNo: string; initialPhone: string }) {
+export default function TrackClient({ shopId, initialOrderNo, initialPhone }: { shopId: string; initialOrderNo: string; initialPhone: string }) {
   const supabase = createClient();
   const [phone, setPhone] = useState(initialPhone);
   const [results, setResults] = useState<LookupResult[] | null>(null);
@@ -103,6 +103,7 @@ export default function TrackClient({ initialOrderNo, initialPhone }: { initialO
     setLoading(true);
     try {
       const { data, error } = await supabase.rpc("lookup_online_orders_by_phone", {
+        p_shop_id: shopId,
         p_customer_phone: phoneValue,
       });
       if (error) throw error;

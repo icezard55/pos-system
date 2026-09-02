@@ -8,9 +8,11 @@ import { CUSTOMER_TYPE_LABEL } from "@/lib/types";
 export default function CustomersClient({
   initialCustomers,
   isAdmin,
+  shopId,
 }: {
   initialCustomers: Customer[];
   isAdmin: boolean;
+  shopId: string;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -40,6 +42,7 @@ export default function CustomersClient({
       const { data, error } = await supabase
         .from("customers")
         .insert({
+          shop_id: shopId,
           name: name.trim(),
           phone: phone || null,
           note: note || null,

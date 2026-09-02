@@ -7,7 +7,7 @@ export default async function DiscountCodesPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  const { data: profile } = await supabase.from("profiles").select("role, shop_id").eq("id", user!.id).single();
   if (profile?.role !== "admin") redirect("/dashboard");
 
   const { data: codes } = await supabase
@@ -15,5 +15,5 @@ export default async function DiscountCodesPage() {
     .select("*")
     .order("created_at", { ascending: false });
 
-  return <DiscountCodesClient codes={codes ?? []} />;
+  return <DiscountCodesClient codes={codes ?? []} shopId={profile?.shop_id ?? ""} />;
 }

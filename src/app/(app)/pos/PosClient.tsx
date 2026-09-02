@@ -17,12 +17,14 @@ interface BarcodeRow {
 }
 
 export default function PosClient({
+  shopId,
   products,
   barcodes = [],
   showVatOnReceipt = true,
   promotions = [],
   loyaltyRewards = [],
 }: {
+  shopId: string;
   products: Product[];
   barcodes?: BarcodeRow[];
   showVatOnReceipt?: boolean;
@@ -174,6 +176,7 @@ export default function PosClient({
     setDiscountCodeChecking(true);
     try {
       const { data, error } = await supabase.rpc("validate_discount_code", {
+        p_shop_id: shopId,
         p_code: discountCode.trim(),
         p_order_amount: preCodeTotal,
       });

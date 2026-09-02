@@ -22,9 +22,11 @@ function toLocalISODate(d: Date): string {
 export default function PromotionsClient({
   promotions,
   products,
+  shopId,
 }: {
   promotions: Promotion[];
   products: ProductLite[];
+  shopId: string;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -82,6 +84,7 @@ export default function PromotionsClient({
     setBusy(true);
     try {
       const { error } = await supabase.from("promotions").insert({
+        shop_id: shopId,
         product_id: productId,
         name: name.trim(),
         buy_qty: Number(buyQty),

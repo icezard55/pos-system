@@ -16,7 +16,7 @@ function toLocalISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export default function DiscountCodesClient({ codes }: { codes: DiscountCode[] }) {
+export default function DiscountCodesClient({ codes, shopId }: { codes: DiscountCode[]; shopId: string }) {
   const supabase = createClient();
   const router = useRouter();
   const [showAdd, setShowAdd] = useState(false);
@@ -61,6 +61,7 @@ export default function DiscountCodesClient({ codes }: { codes: DiscountCode[] }
     setBusy(true);
     try {
       const { error } = await supabase.from("discount_codes").insert({
+        shop_id: shopId,
         code: code.trim().toUpperCase(),
         discount_type: discountType,
         discount_value: Number(discountValue),

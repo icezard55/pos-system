@@ -10,7 +10,7 @@ export default async function SettingsPage() {
   const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
   if (profile?.role !== "admin") redirect("/dashboard");
 
-  const { data: settings } = await supabase.from("shop_settings").select("*").eq("id", true).maybeSingle();
+  const { data: settings } = await supabase.from("shop_settings").select("*").maybeSingle();
 
   return <SettingsClient initialSettings={settings} />;
 }

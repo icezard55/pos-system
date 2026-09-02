@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { LoyaltyReward } from "@/lib/types";
 
-export default function LoyaltyRewardsClient({ rewards }: { rewards: LoyaltyReward[] }) {
+export default function LoyaltyRewardsClient({ rewards, shopId }: { rewards: LoyaltyReward[]; shopId: string }) {
   const supabase = createClient();
   const router = useRouter();
   const [showAdd, setShowAdd] = useState(false);
@@ -64,6 +64,7 @@ export default function LoyaltyRewardsClient({ rewards }: { rewards: LoyaltyRewa
     setBusy(true);
     try {
       const { error } = await supabase.from("loyalty_rewards").insert({
+        shop_id: shopId,
         name: name.trim(),
         points_cost: Number(pointsCost),
         stock_qty: stockQty.trim() ? Number(stockQty) : null,

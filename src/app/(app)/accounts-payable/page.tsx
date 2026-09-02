@@ -7,7 +7,7 @@ export default async function AccountsPayablePage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  const { data: profile } = await supabase.from("profiles").select("role, shop_id").eq("id", user!.id).single();
   if (profile?.role !== "admin") redirect("/dashboard");
 
   const { data: payables } = await supabase
@@ -27,6 +27,7 @@ export default async function AccountsPayablePage() {
     <AccountsPayableClient
       payables={payables ?? []}
       receivedPOs={(receivedPOs as any) ?? []}
+      shopId={profile?.shop_id ?? ""}
     />
   );
 }

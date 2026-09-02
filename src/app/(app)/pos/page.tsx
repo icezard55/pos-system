@@ -3,6 +3,13 @@ import PosClient from "./PosClient";
 
 export default async function PosPage() {
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("shop_id").eq("id", user!.id).single();
+  const shopId = profile?.shop_id ?? "";
+
   const { data: products } = await supabase
     .from("products")
     .select("*")
@@ -14,7 +21,7 @@ export default async function PosPage() {
 
   const { data: shopSettings } = await supabase.from("shop_settings").select("*").single();
 
-  const { data: promotions } = await supabase.rpc("get_active_promotions");
+  const { data: promotions } = await supabase.rpc("get_active_promotions", { p_shop_id: shopId });
 
   const { data: loyaltyRewards } = await supabase
     .from("loyalty_rewards")
@@ -24,6 +31,7 @@ export default async function PosPage() {
 
   return (
     <PosClient
+      shopId={shopId}
       products={products ?? []}
       barcodes={barcodes ?? []}
       showVatOnReceipt={shopSettings?.show_vat_on_receipt ?? true}

@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { Supplier } from "@/lib/types";
 
-export default function SuppliersClient({ initialSuppliers }: { initialSuppliers: Supplier[] }) {
+export default function SuppliersClient({ initialSuppliers, shopId }: { initialSuppliers: Supplier[]; shopId: string }) {
   const router = useRouter();
   const supabase = createClient();
   const [suppliers, setSuppliers] = useState(initialSuppliers);
@@ -24,7 +24,7 @@ export default function SuppliersClient({ initialSuppliers }: { initialSuppliers
     try {
       const { data, error } = await supabase
         .from("suppliers")
-        .insert({ name: name.trim(), phone: phone || null, address: address || null, note: note || null })
+        .insert({ shop_id: shopId, name: name.trim(), phone: phone || null, address: address || null, note: note || null })
         .select()
         .single();
       if (error) throw error;

@@ -7,7 +7,7 @@ export default async function ExpensesPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  const { data: profile } = await supabase.from("profiles").select("role, shop_id").eq("id", user!.id).single();
   if (profile?.role !== "admin") redirect("/dashboard");
 
   const { data: expenses } = await supabase
@@ -22,5 +22,5 @@ export default async function ExpensesPage() {
     .select("*")
     .order("day_of_month", { ascending: true });
 
-  return <ExpensesClient initialExpenses={expenses ?? []} initialRecurring={recurring ?? []} />;
+  return <ExpensesClient initialExpenses={expenses ?? []} initialRecurring={recurring ?? []} shopId={profile?.shop_id ?? ""} />;
 }

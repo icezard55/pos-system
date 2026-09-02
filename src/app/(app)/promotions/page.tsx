@@ -7,7 +7,7 @@ export default async function PromotionsPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  const { data: profile } = await supabase.from("profiles").select("role, shop_id").eq("id", user!.id).single();
   if (profile?.role !== "admin") redirect("/dashboard");
 
   const [{ data: promotions }, { data: products }] = await Promise.all([
@@ -15,5 +15,5 @@ export default async function PromotionsPage() {
     supabase.from("products").select("id,name,sku,sell_price").eq("is_active", true).order("name"),
   ]);
 
-  return <PromotionsClient promotions={promotions ?? []} products={products ?? []} />;
+  return <PromotionsClient promotions={promotions ?? []} products={products ?? []} shopId={profile?.shop_id ?? ""} />;
 }

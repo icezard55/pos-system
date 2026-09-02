@@ -51,9 +51,11 @@ function nextOccurrenceDate(rec: RecurringExpense, afterStr: string): string {
 export default function ExpensesClient({
   initialExpenses,
   initialRecurring,
+  shopId,
 }: {
   initialExpenses: Expense[];
   initialRecurring: RecurringExpense[];
+  shopId: string;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -103,6 +105,7 @@ export default function ExpensesClient({
       const { data, error } = await supabase
         .from("expenses")
         .insert({
+          shop_id: shopId,
           category,
           amount: Number(amount),
           expense_date: expenseDate,
@@ -158,6 +161,7 @@ export default function ExpensesClient({
       const { data, error } = await supabase
         .from("recurring_expenses")
         .insert({
+          shop_id: shopId,
           category: rCategory,
           amount: Number(rAmount),
           day_of_month: Number(rDay),
@@ -189,6 +193,7 @@ export default function ExpensesClient({
       const { data, error } = await supabase
         .from("expenses")
         .insert({
+          shop_id: shopId,
           category: rec.category,
           amount: rec.amount,
           expense_date: toLocalISODate(new Date()),
@@ -228,6 +233,7 @@ export default function ExpensesClient({
       const { data, error } = await supabase
         .from("expenses")
         .insert({
+          shop_id: shopId,
           category: rec.category,
           amount: rec.amount,
           expense_date: planningDate,

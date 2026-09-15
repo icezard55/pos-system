@@ -25,14 +25,18 @@ const links = [
   { href: "/settings", label: "ตั้งค่าร้าน", icon: "⚙️", roles: ["admin"] },
 ];
 
+const ownerLink = { href: "/super-admin", label: "จัดการร้าน SaaS", icon: "🏢" };
+
 export default function NavClient({
   email,
   fullName,
   role,
+  isPlatformOwner = false,
 }: {
   email: string;
   fullName: string;
   role: "admin" | "cashier";
+  isPlatformOwner?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -68,6 +72,20 @@ export default function NavClient({
               {l.label}
             </Link>
           ))}
+        {isPlatformOwner && (
+          <>
+            <div className="my-2 border-t border-gray-700" />
+            <Link
+              href={ownerLink.href}
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                pathname === ownerLink.href ? "bg-brand text-white" : "text-gray-300 hover:bg-gray-800"
+              }`}
+            >
+              <span>{ownerLink.icon}</span>
+              {ownerLink.label}
+            </Link>
+          </>
+        )}
       </nav>
       <div className="border-t border-gray-700 p-3">
         <button

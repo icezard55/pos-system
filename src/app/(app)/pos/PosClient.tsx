@@ -243,6 +243,31 @@ export default function PosClient({
     setShowCashKeypad(false);
   }
 
+  // ให้พิมพ์ตัวเลขจากคีย์บอร์ดจริงได้ด้วย ไม่ใช่แค่กดปุ่มบนจอ
+  useEffect(() => {
+    if (!showCashKeypad) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key >= "0" && e.key <= "9") {
+        e.preventDefault();
+        keypadPressDigit(e.key);
+      } else if (e.key === "." || e.key === ",") {
+        e.preventDefault();
+        keypadPressDot();
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        keypadBackspace();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        confirmKeypad();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        setShowCashKeypad(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [showCashKeypad, keypadValue]);
+
   const estimatedPlatformFee =
     channel !== "store" && Number(platformFeePct) > 0
       ? Math.round(total * (Number(platformFeePct) / 100) * 100) / 100

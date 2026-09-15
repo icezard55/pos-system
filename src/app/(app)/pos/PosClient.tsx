@@ -54,6 +54,9 @@ export default function PosClient({
   const [singleMethod, setSingleMethod] = useState<PaymentMethod>("cash");
   const [payRows, setPayRows] = useState<PaymentRow[]>([{ method: "cash", amount: "" }]);
   const [cashReceived, setCashReceived] = useState("");
+  const [showCashKeypad, setShowCashKeypad] = useState(false);
+  const [keypadValue, setKeypadValue] = useState("0");
+  const [changeResult, setChangeResult] = useState<{ amount: number; saleId: string } | null>(null);
 
   // ช่องทางการขาย (หน้าร้าน / แพลตฟอร์มออนไลน์)
   const [channel, setChannel] = useState<SaleChannel>("store");
@@ -204,6 +207,41 @@ export default function PosClient({
     !splitMode && singleMethod === "cash" && cashReceived !== ""
       ? Math.round((Number(cashReceived) - total) * 100) / 100
       : null;
+
+  function openCashKeypad() {
+    setKeypadValue(cashReceived || "0");
+    setShowCashKeypad(true);
+  }
+  function keypadPressDigit(d: string) {
+    setKeypadValue((v) => {
+      if (v === "0") return d;
+      if (v.includes(".") && v.split(".")[1]?.length >= 2) return v;
+      return v + d;
+    });
+  }
+  function keypadPressDot() {
+    setKeypadValue((v) => (v.includes(".") ? v : v + "."));
+  }
+  function keypadBackspace() {
+    setKeypadValue((v) => (v.length <= 1 ? "0" : v.slice(0, -1)));
+  }
+  function keypadClear() {
+    setKeypadValue("0");
+  }
+  function keypadAddAmount(n: number) {
+    setKeypadValue((v) => {
+      const current = Number(v) || 0;
+      const next = Math.round((current + n) * 100) / 100;
+      return String(next);
+    });
+  }
+  function keypadSetFull() {
+    setKeypadValue(total ? String(Math.round(total * 100) / 100) : "0");
+  }
+  function confirmKeypad() {
+    setCashReceived(keypadValue);
+    setShowCashKeypad(false);
+  }
 
   const estimatedPlatformFee =
     channel !== "store" && Number(platformFeePct) > 0
@@ -361,6 +399,10 @@ export default function PosClient({
       });
       if (error) throw error;
       const saleId = data?.[0]?.sale_id;
+      const isCashSale = !splitMode && singleMethod === "cash";
+      const changeAmount = isCashSale
+        ? Math.round(((Number(cashReceived) || total) - total) * 100) / 100
+        : 0;
       setCart([]);
       setBillDiscount("0");
       setCustomerName("");
@@ -378,7 +420,13 @@ export default function PosClient({
       setDiscountCode("");
       setAppliedDiscount(null);
       setDiscountCodeMsg(null);
-      if (saleId) router.push(`/receipt/${saleId}`);
+      if (saleId) {
+        if (isCashSale) {
+          setChangeResult({ amount: changeAmount, saleId });
+        } else {
+          router.push(`/receipt/${saleId}`);
+        }
+      }
     } catch (err: any) {
       setError(err.message ?? "บันทึกการขายไม่สำเร็จ");
     } finally {
@@ -857,15 +905,18 @@ export default function PosClient({
               {singleMethod === "cash" && (
                 <div className="space-y-1 rounded-lg border border-dashed p-2">
                   <label className="mb-1 block text-xs text-gray-600">รับเงินมา (บาท)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={cashReceived}
-                    onChange={(e) => setCashReceived(e.target.value)}
-                    placeholder={total ? total.toFixed(2) : "0.00"}
-                    className="w-full rounded-lg border px-3 py-1.5 text-sm"
-                  />
+                  <button
+                    type="button"
+                    onClick={openCashKeypad}
+                    className="flex w-full items-center justify-between rounded-lg border bg-gray-50 px-3 py-2 text-left text-lg font-semibold text-gray-900 hover:border-brand hover:bg-white"
+                  >
+                    <span>
+                      {cashReceived !== ""
+                        ? `฿${Number(cashReceived).toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
+                        : "แตะเพื่อกรอกเงินรับ"}
+                    </span>
+                    <span className="text-base">🔢</span>
+                  </button>
                   {cashReceived !== "" && cashChange !== null && (
                     <p className={`text-sm font-semibold ${cashChange < 0 ? "text-red-600" : "text-green-700"}`}>
                       {cashChange >= 0
@@ -975,6 +1026,87 @@ export default function PosClient({
           </button>
         </div>
       </div>
+
+      {showCashKeypad && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xs rounded-2xl bg-white p-4 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-700">💵 รับเงินสด</span>
+              <button type="button" onClick={() => setShowCashKeypad(false)} className="text-gray-400 hover:text-gray-600">
+                ✕
+              </button>
+            </div>
+            <div className="mb-3 rounded-lg bg-gray-50 px-3 py-3 text-right text-3xl font-bold text-gray-900">
+              ฿{Number(keypadValue || 0).toLocaleString("th-TH", { minimumFractionDigits: keypadValue.includes(".") ? 2 : 0 })}
+            </div>
+            <div className="mb-2 grid grid-cols-3 gap-2 text-sm">
+              <button type="button" onClick={() => keypadAddAmount(100)} className="rounded-lg bg-blue-50 py-2 font-semibold text-brand hover:bg-blue-100">+100</button>
+              <button type="button" onClick={() => keypadAddAmount(500)} className="rounded-lg bg-blue-50 py-2 font-semibold text-brand hover:bg-blue-100">+500</button>
+              <button type="button" onClick={() => keypadAddAmount(1000)} className="rounded-lg bg-blue-50 py-2 font-semibold text-brand hover:bg-blue-100">+1,000</button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {["7", "8", "9", "4", "5", "6", "1", "2", "3"].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => keypadPressDigit(d)}
+                  className="rounded-lg border py-3 text-lg font-medium hover:bg-gray-50"
+                >
+                  {d}
+                </button>
+              ))}
+              <button type="button" onClick={keypadPressDot} className="rounded-lg border py-3 text-lg font-medium hover:bg-gray-50">.</button>
+              <button type="button" onClick={() => keypadPressDigit("0")} className="rounded-lg border py-3 text-lg font-medium hover:bg-gray-50">0</button>
+              <button type="button" onClick={keypadBackspace} className="rounded-lg border py-3 text-lg font-medium hover:bg-gray-50">⌫</button>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" onClick={keypadClear} className="rounded-lg border py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">ล้าง</button>
+              <button type="button" onClick={keypadSetFull} className="rounded-lg border py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">เต็ม (พอดีบิล)</button>
+            </div>
+            <button
+              type="button"
+              onClick={confirmKeypad}
+              className="mt-3 w-full rounded-lg bg-brand py-2.5 font-semibold text-white hover:bg-brand-dark"
+            >
+              ตกลง
+            </button>
+          </div>
+        </div>
+      )}
+
+      {changeResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xs rounded-2xl bg-white p-6 text-center shadow-xl">
+            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-2xl text-green-600">
+              ✓
+            </div>
+            <p className="text-sm text-gray-500">ทอน</p>
+            <p className="mb-5 text-4xl font-bold text-gray-900">
+              ฿{changeResult.amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const id = changeResult.saleId;
+                  setChangeResult(null);
+                  router.push(`/receipt/${id}`);
+                }}
+                className="w-full rounded-lg bg-brand py-2.5 font-semibold text-white hover:bg-brand-dark"
+              >
+                🧾 ดูใบเสร็จ
+              </button>
+              <button
+                type="button"
+                onClick={() => setChangeResult(null)}
+                className="w-full rounded-lg border py-2.5 font-semibold text-gray-600 hover:bg-gray-50"
+              >
+                ขายต่อ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

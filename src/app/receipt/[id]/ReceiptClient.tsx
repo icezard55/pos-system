@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useState } from "react";
 import type { Sale, SaleItem, SalePayment, ShopSettings } from "@/lib/types";
 import { splitVat } from "@/lib/types";
 
@@ -25,10 +26,42 @@ export default function ReceiptClient({
   const dt = new Date(sale.created_at);
   const { base, vat } = splitVat(Number(sale.total));
   const isTaxInvoice = !!(sale.customer_tax_id || sale.customer_address);
+  const [paperSize, setPaperSize] = useState<"thermal" | "a5">("thermal");
+
+  const printCss =
+    paperSize === "a5"
+      ? `
+        @media print {
+          @page { size: A5 portrait; margin: 10mm; }
+          html, body { width: auto !important; }
+          #receipt {
+            width: 128mm !important;
+            max-width: 128mm !important;
+            padding: 0 !important;
+            font-size: 14px !important;
+          }
+        }
+      `
+      : `
+        @media print {
+          @page { size: 80mm auto; margin: 0; }
+          html, body { width: 80mm !important; }
+          #receipt {
+            width: 80mm !important;
+            max-width: 80mm !important;
+            padding: 4mm !important;
+            font-size: 11px !important;
+          }
+        }
+      `;
 
   return (
     <div className="min-h-screen bg-gray-100 py-8">
-      <div className="mx-auto max-w-sm rounded-xl bg-white p-6 shadow-lg" id="receipt">
+      <style dangerouslySetInnerHTML={{ __html: printCss }} />
+      <div
+        className={`mx-auto rounded-xl bg-white p-6 shadow-lg ${paperSize === "a5" ? "max-w-xl" : "max-w-sm"}`}
+        id="receipt"
+      >
         <div className="mb-4 text-center">
           {shopSettings && (
             <>
@@ -109,13 +142,32 @@ export default function ReceiptClient({
         )}
         <p className="mt-4 text-center text-xs text-gray-400">ขอบคุณที่ใช้บริการ</p>
 
-        <div className="no-print mt-6 flex gap-2">
-          <button onClick={() => window.print()} className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-            🖨️ พิมพ์ใบเสร็จ
-          </button>
-          <Link href="/pos" className="flex-1 rounded-lg border py-2 text-center text-sm hover:bg-gray-50">
-            ขายต่อ
-          </Link>
+        <div className="no-print mt-6 space-y-2">
+          <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
+            <span>ขนาดกระดาษ:</span>
+            <button
+              type="button"
+              onClick={() => setPaperSize("thermal")}
+              className={`rounded-full px-3 py-1 font-medium ${paperSize === "thermal" ? "bg-brand text-white" : "border text-gray-600 hover:bg-gray-50"}`}
+            >
+              ความร้อน 80mm
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaperSize("a5")}
+              className={`rounded-full px-3 py-1 font-medium ${paperSize === "a5" ? "bg-brand text-white" : "border text-gray-600 hover:bg-gray-50"}`}
+            >
+              A5
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => window.print()} className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark">
+              🖨️ พิมพ์ใบเสร็จ
+            </button>
+            <Link href="/pos" className="flex-1 rounded-lg border py-2 text-center text-sm hover:bg-gray-50">
+              ขายต่อ
+            </Link>
+          </div>
         </div>
       </div>
     </div>

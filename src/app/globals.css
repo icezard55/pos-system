@@ -9,15 +9,8 @@ body {
 @media print {
   .no-print { display: none !important; }
 
-  /* Optimized for 80mm thermal receipt printers */
-  @page {
-    size: 80mm auto;
-    margin: 0;
-  }
-
   html, body {
     background: #fff !important;
-    width: 80mm;
   }
 
   body * {
@@ -32,12 +25,26 @@ body {
     position: absolute;
     left: 0;
     top: 0;
-    width: 80mm !important;
-    max-width: 80mm !important;
     margin: 0 !important;
-    padding: 4mm !important;
     box-shadow: none !important;
     border-radius: 0 !important;
+  }
+
+  /* Default: optimized for 80mm thermal receipt printers.
+     Overridden per-page (e.g. A5) via an inline <style> the page renders itself. */
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  html, body {
+    width: 80mm;
+  }
+
+  #receipt {
+    width: 80mm !important;
+    max-width: 80mm !important;
+    padding: 4mm !important;
     font-size: 11px;
   }
 }

@@ -465,13 +465,35 @@ export default function PosClient({
     }
   }
 
+  function speakAmountReceived(amount: number) {
+    try {
+      if (!("speechSynthesis" in window)) return;
+      const baht = Math.floor(amount);
+      const satang = Math.round((amount - baht) * 100);
+      const text = satang > 0 ? `ได้รับเงิน ${baht} บาท ${satang} สตางค์` : `ได้รับเงิน ${baht} บาท`;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = "th-TH";
+      utter.rate = 1;
+      const voices = window.speechSynthesis.getVoices();
+      const thVoice = voices.find((v) => v.lang?.toLowerCase().startsWith("th"));
+      if (thVoice) utter.voice = thVoice;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utter);
+    } catch (err) {
+      console.error("พูดจำนวนเงินไม่สำเร็จ", err);
+    }
+  }
+
   function handleConfirmPaymentReceived() {
     playPaymentReceivedSound();
+    if (qrAmount !== null) {
+      window.setTimeout(() => speakAmountReceived(qrAmount), 350);
+    }
     setQrConfirmed(true);
     window.setTimeout(() => {
       setQrAmount(null);
       setQrConfirmed(false);
-    }, 900);
+    }, 1500);
   }
 
   useEffect(() => {

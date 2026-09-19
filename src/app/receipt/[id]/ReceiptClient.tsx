@@ -27,6 +27,47 @@ export default function ReceiptClient({
   const { base, vat } = splitVat(Number(sale.total));
   const isTaxInvoice = !!(sale.customer_tax_id || sale.customer_address);
   const [paperSize, setPaperSize] = useState<"thermal" | "a5">("thermal");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  async function handleDownloadPdf() {
+    if (downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
+      const el = document.getElementById("receipt");
+      if (!el) throw new Error("ไม่พบเนื้อหาใบเสร็จ");
+
+      const canvas = await html2canvas(el, {
+        scale: 3,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        ignoreElements: (node) => (node as HTMLElement).classList?.contains("no-print"),
+      });
+      const imgData = canvas.toDataURL("image/png");
+
+      const margin = 5;
+      const contentWidthMm = paperSize === "a5" ? 128 : 70;
+      const contentHeightMm = (canvas.height / canvas.width) * contentWidthMm;
+      const pageWidthMm = contentWidthMm + margin * 2;
+      const pageHeightMm = contentHeightMm + margin * 2;
+
+      const pdf = new jsPDF({
+        unit: "mm",
+        format: [pageWidthMm, pageHeightMm],
+        orientation: "portrait",
+      });
+      pdf.addImage(imgData, "PNG", margin, margin, contentWidthMm, contentHeightMm);
+      pdf.save(`ใบเสร็จ-${sale.sale_no}.pdf`);
+    } catch (err) {
+      console.error(err);
+      alert("สร้างไฟล์ PDF ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
 
   const printCss =
     paperSize === "a5"
@@ -160,6 +201,14 @@ export default function ReceiptClient({
               A5
             </button>
           </div>
+          <button
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={downloadingPdf}
+            className="w-full rounded-lg border border-brand py-2 text-sm font-semibold text-brand hover:bg-brand/5 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {downloadingPdf ? "กำลังสร้างไฟล์ PDF..." : "📄 ดาวน์โหลด PDF"}
+          </button>
           <div className="flex gap-2">
             <button onClick={() => window.print()} className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark">
               🖨️ พิมพ์ใบเสร็จ

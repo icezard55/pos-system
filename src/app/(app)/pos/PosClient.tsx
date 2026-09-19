@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { ActivePromotion, CartLine, Customer, LoyaltyReward, PaymentMethod, Product, SaleChannel } from "@/lib/types";
@@ -361,10 +361,10 @@ export default function PosClient({
     setPayRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
   }
 
-  // barcode scanners act as a keyboard: they type the code fast and end with Enter.
-  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== "Enter") return;
-    const code = search.trim().toLowerCase();
+  // Shared by the physical USB/Bluetooth scanner (which types into the search box and ends with
+  // Enter) and the camera-based scanner below — both just need to resolve a code to a product.
+  function tryAddByCode(rawCode: string) {
+    const code = rawCode.trim().toLowerCase();
     if (!code) return;
     const exact = products.find((p) => (p.sku ?? "").toLowerCase() === code) ?? barcodeMap.get(code);
     if (exact) {
@@ -374,12 +374,61 @@ export default function PosClient({
         addToCart(exact);
         setScanMsg(`เพิ่ม "${exact.name}" แล้ว`);
       }
-      setSearch("");
     } else {
-      setScanMsg(`ไม่พบสินค้ารหัส "${search}"`);
+      setScanMsg(`ไม่พบสินค้ารหัส "${rawCode}"`);
     }
     window.setTimeout(() => setScanMsg(null), 2500);
   }
+
+  // barcode scanners act as a keyboard: they type the code fast and end with Enter.
+  function handleSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    if (!search.trim()) return;
+    tryAddByCode(search);
+    setSearch("");
+  }
+
+  // Camera-based barcode scanning for phones/tablets with no external scanner attached.
+  const [showCameraScan, setShowCameraScan] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const zxingReaderRef = useRef<any>(null);
+  const lastScanRef = useRef<{ code: string; at: number }>({ code: "", at: 0 });
+
+  useEffect(() => {
+    if (!showCameraScan) return;
+    let cancelled = false;
+    setCameraError(null);
+    (async () => {
+      try {
+        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+        if (cancelled) return;
+        const reader = new BrowserMultiFormatReader();
+        zxingReaderRef.current = reader;
+        await reader.decodeFromConstraints(
+          { video: { facingMode: "environment" } },
+          videoRef.current!,
+          (result) => {
+            if (!result) return;
+            const code = result.getText();
+            const now = Date.now();
+            // Debounce: a video stream fires the callback many times per second, so avoid adding
+            // the exact same code repeatedly while it's still sitting in front of the camera.
+            if (code === lastScanRef.current.code && now - lastScanRef.current.at < 2000) return;
+            lastScanRef.current = { code, at: now };
+            tryAddByCode(code);
+          }
+        );
+      } catch (err: any) {
+        if (!cancelled) setCameraError(err?.message ?? "เปิดกล้องไม่สำเร็จ กรุณาอนุญาตให้เว็บไซต์ใช้กล้อง");
+      }
+    })();
+    return () => {
+      cancelled = true;
+      zxingReaderRef.current?.reset?.();
+      zxingReaderRef.current = null;
+    };
+  }, [showCameraScan]);
 
   async function handleCheckout() {
     if (cart.length === 0) return;
@@ -465,16 +514,26 @@ export default function PosClient({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
       <div className="lg:col-span-1">
         <h1 className="mb-4 text-2xl font-bold">บันทึกการขาย</h1>
-        <input
-          autoFocus
-          placeholder="ค้นหาสินค้าด้วยชื่อหรือรหัส หรือยิงบาร์โค้ด..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={handleSearchKeyDown}
-          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
-        />
+        <div className="flex gap-2">
+          <input
+            autoFocus
+            placeholder="ค้นหาสินค้าด้วยชื่อหรือรหัส หรือยิงบาร์โค้ด..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={() => setShowCameraScan(true)}
+            className="flex-shrink-0 rounded-lg border border-brand px-3 py-2 text-sm font-medium text-brand hover:bg-brand/5"
+            title="สแกนบาร์โค้ดด้วยกล้องมือถือ"
+          >
+            📷 สแกน
+          </button>
+        </div>
         <p className="mb-4 mt-1 text-xs text-gray-400">
-          {scanMsg ?? "เชื่อมเครื่องสแกนบาร์โค้ด (USB/บลูทูธ) แล้วยิงรหัสสินค้าที่ช่องนี้ได้เลย ระบบจะเพิ่มลงตะกร้าอัตโนมัติ"}
+          {scanMsg ?? "เชื่อมเครื่องสแกนบาร์โค้ด (USB/บลูทูธ) แล้วยิงรหัสสินค้าที่ช่องนี้ได้เลย หรือกด 📷 สแกน เพื่อใช้กล้องมือถือแทนได้"}
         </p>
         <div className="grid grid-cols-2 gap-3">
           {groupedItems.map((item) => {
@@ -629,7 +688,80 @@ export default function PosClient({
         {cart.length === 0 ? (
           <p className="text-sm text-gray-400">ยังไม่มีสินค้าในตะกร้า</p>
         ) : (
-          <div className="max-h-[28rem] overflow-y-auto lg:max-h-[36rem]">
+          <>
+            {/* Mobile: one card per line — the 7-column table below is unusable on a narrow phone screen. */}
+            <div className="max-h-[28rem] space-y-2 overflow-y-auto md:hidden">
+              {cart.map((l) => {
+                const unitPrice = effectivePrice(l.product);
+                const promoDiscount = promoDiscountFor(l.product, l.qty, unitPrice);
+                const lineTotal = Math.max(unitPrice * l.qty - (Number(l.discount) || 0) - promoDiscount, 0);
+                return (
+                  <div key={l.product.id} className="rounded-xl border border-gray-100 p-3">
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{l.product.name}</p>
+                        <p className="text-xs text-gray-500">
+                          ฿{unitPrice.toLocaleString("th-TH", { minimumFractionDigits: 2 })} / หน่วย
+                        </p>
+                        {promoDiscount > 0 && (
+                          <span className="mt-0.5 inline-block rounded-full bg-pink-50 px-1.5 py-0.5 text-[10px] font-normal text-pink-600">
+                            🎁 -฿{promoDiscount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => removeLine(l.product.id)}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-base text-red-500 hover:bg-red-50"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => updateQty(l.product.id, l.qty - 1)}
+                          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-gray-300 bg-white text-sm font-bold text-gray-600 hover:bg-gray-100"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          max={l.product.no_stock_tracking ? undefined : l.product.stock_qty}
+                          value={l.qty}
+                          onChange={(e) => updateQty(l.product.id, Number(e.target.value))}
+                          className="w-14 rounded border px-1 py-1.5 text-center text-sm font-semibold"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateQty(l.product.id, l.qty + 1)}
+                          disabled={!l.product.no_stock_tracking && l.qty >= l.product.stock_qty}
+                          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded border border-gray-300 bg-white text-sm font-bold text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        min={0}
+                        value={l.discount || ""}
+                        placeholder="ส่วนลด"
+                        onChange={(e) => updateLineDiscount(l.product.id, Number(e.target.value))}
+                        className="w-20 rounded border px-1.5 py-1.5 text-right text-sm"
+                      />
+                      <span className="font-semibold text-gray-800">
+                        ฿{lineTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop/tablet: full table */}
+            <div className="hidden max-h-[28rem] overflow-y-auto md:block lg:max-h-[36rem]">
             <table className="w-full border-collapse text-sm">
               <thead className="sticky top-0 bg-white">
                 <tr className="border-b text-left text-xs text-gray-500">
@@ -715,7 +847,8 @@ export default function PosClient({
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
 
         <div className="mt-4 space-y-2 border-t pt-4 text-sm">
@@ -1051,6 +1184,42 @@ export default function PosClient({
           </button>
         </div>
       </div>
+
+      {showCameraScan && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b p-3">
+              <span className="text-sm font-semibold text-gray-700">📷 สแกนบาร์โค้ดด้วยกล้อง</span>
+              <button
+                type="button"
+                onClick={() => setShowCameraScan(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="relative bg-black">
+              <video ref={videoRef} className="aspect-square w-full object-cover" muted playsInline />
+              <div className="pointer-events-none absolute inset-6 rounded-xl border-2 border-white/70" />
+            </div>
+            <div className="space-y-1 p-3 text-center">
+              {cameraError ? (
+                <p className="text-xs text-red-600">{cameraError}</p>
+              ) : (
+                <p className="text-xs text-gray-400">เล็งกล้องไปที่บาร์โค้ดสินค้า ระบบจะเพิ่มลงตะกร้าให้อัตโนมัติ</p>
+              )}
+              {scanMsg && <p className="text-sm font-medium text-brand">{scanMsg}</p>}
+              <button
+                type="button"
+                onClick={() => setShowCameraScan(false)}
+                className="mt-2 w-full rounded-lg border py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                ปิดกล้อง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showCashKeypad && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

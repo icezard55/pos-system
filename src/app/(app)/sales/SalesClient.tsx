@@ -28,11 +28,18 @@ const SALE_HEADER_MAP: Record<string, string> = {
 
 const ORDER_HEADER_MAP: Record<string, string> = {
   order_no: "order_no", "เลขออเดอร์": "order_no", "เลขที่ออเดอร์": "order_no", "เลขที่บิล": "order_no", "เลขบิล": "order_no",
+  "order id": "order_no",
   date: "date", "วันที่": "date",
   sku: "sku", "รหัสสินค้า": "sku", "รหัส": "sku",
+  "seller sku": "sku",
   product_name: "product_name", "สินค้า": "product_name", "ชื่อสินค้า": "product_name",
+  "product name": "product_name",
+  variation: "variation", "ตัวเลือกสินค้า": "variation", "รายละเอียด": "variation",
   qty: "qty", "จำนวน": "qty",
+  quantity: "qty",
   unit_price: "unit_price", "ราคาต่อหน่วย": "unit_price", "ราคา": "unit_price",
+  "sku unit original price": "unit_price",
+  "sku subtotal after discount": "subtotal_after_discount",
 };
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
@@ -365,7 +372,7 @@ export default function SalesClient({
         return;
       }
 
-      interface OrderItem { sku: string; product_name: string; qty: number; unit_price: number }
+      interface OrderItem { sku: string; product_name: string; variation: string; qty: number; unit_price: number; subtotal_after_discount: number }
       interface OrderGroup { order_no: string; items: OrderItem[] }
       const groups = new Map<string, OrderGroup>();
       let anonCounter = 0;
@@ -375,23 +382,42 @@ export default function SalesClient({
         groups.get(orderNo)!.items.push({
           sku: String(r.sku ?? "").trim(),
           product_name: String(r.product_name ?? "").trim(),
+          variation: String(r.variation ?? "").trim(),
           qty: Number(r.qty) || 0,
           unit_price: Number(r.unit_price) || 0,
+          subtotal_after_discount: Number(r.subtotal_after_discount) || 0,
         });
       });
 
-      function findProduct(sku: string, name: string) {
+      // Thai/English platform export files (e.g. TikTok Shop) often split the product name and its
+      // chosen size/color into separate "Product Name" + "Variation" columns, and don't fill in a
+      // Seller SKU at all. Our catalog instead stores one short, specific name per variant (e.g.
+      // "รองเท้าแตะดาวเทียมผ้า เบอร์10.5"). A plain substring check in either direction rarely lines
+      // up, so once SKU/exact-name matching fails, fall back to requiring every space-separated word
+      // of the catalog product's name to appear somewhere in the combined product_name + variation
+      // text. This correctly distinguishes near-duplicate catalog entries (e.g. "...คอทหารเรือใบ..."
+      // vs "...ชายเรือใบ...") because every word — including the size token like "เบอร์44" — must hit.
+      function findProduct(sku: string, name: string, variation: string) {
         if (sku) {
           const bySku = productList.find((p) => (p.sku ?? "").trim().toLowerCase() === sku.toLowerCase());
-          if (bySku) return bySku;
+          if (bySku) return { product: bySku, ambiguous: false };
         }
         if (name) {
           const exact = productList.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
-          if (exact) return exact;
+          if (exact) return { product: exact, ambiguous: false };
           const contains = productList.filter((p) => p.name.toLowerCase().includes(name.toLowerCase()));
-          if (contains.length === 1) return contains[0];
+          if (contains.length === 1) return { product: contains[0], ambiguous: false };
         }
-        return null;
+        const combined = `${name} ${variation}`.toLowerCase();
+        if (combined.trim()) {
+          const tokenMatches = productList.filter((p) => {
+            const words = p.name.toLowerCase().split(/\s+/).filter(Boolean);
+            return words.length > 0 && words.every((w: string) => combined.includes(w));
+          });
+          if (tokenMatches.length === 1) return { product: tokenMatches[0], ambiguous: false };
+          if (tokenMatches.length > 1) return { product: null, ambiguous: true };
+        }
+        return { product: null, ambiguous: false };
       }
 
       let successCount = 0;
@@ -403,12 +429,24 @@ export default function SalesClient({
           const items: { product_id: string; qty: number; discount: number }[] = [];
           let orderTotal = 0;
           for (const it of g.items) {
-            const product = findProduct(it.sku, it.product_name);
+            const { product, ambiguous } = findProduct(it.sku, it.product_name, it.variation);
             if (!product) {
-              throw new Error(`ไม่พบสินค้า "${it.sku || it.product_name}" ในระบบ`);
+              throw new Error(
+                ambiguous
+                  ? `พบสินค้าในระบบมากกว่า 1 รายการที่ตรงกับ "${it.product_name} ${it.variation}" ระบุไม่ได้ว่าเป็นตัวไหน`
+                  : `ไม่พบสินค้า "${it.sku || `${it.product_name} ${it.variation}`.trim()}" ในระบบ`
+              );
             }
             const catalogPrice = Number(product.sell_price);
-            const filePrice = it.unit_price > 0 ? it.unit_price : catalogPrice;
+            // Prefer the actual amount the platform paid out for this line (after seller/platform
+            // discounts) when the file provides it — that's what should reconcile against our
+            // catalog price, not the pre-discount unit price.
+            const filePrice =
+              it.subtotal_after_discount > 0 && it.qty > 0
+                ? Math.round((it.subtotal_after_discount / it.qty) * 100) / 100
+                : it.unit_price > 0
+                ? it.unit_price
+                : catalogPrice;
             const discount = Math.round(Math.max(0, (catalogPrice - filePrice) * it.qty) * 100) / 100;
             if (filePrice > catalogPrice) {
               priceMismatches.push(`${product.name}: ไฟล์ ฿${filePrice} > ราคาในระบบ ฿${catalogPrice} (บันทึกตามราคาระบบ)`);

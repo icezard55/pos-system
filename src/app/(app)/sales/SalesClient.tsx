@@ -40,6 +40,7 @@ const ORDER_HEADER_MAP: Record<string, string> = {
   unit_price: "unit_price", "ราคาต่อหน่วย": "unit_price", "ราคา": "unit_price",
   "sku unit original price": "unit_price",
   "sku subtotal after discount": "subtotal_after_discount",
+  "sku id": "platform_sku_id",
 };
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
@@ -351,6 +352,12 @@ export default function SalesClient({
       if (prodErr) throw prodErr;
       const productList = productRows ?? [];
 
+      const { data: skuMapRows } = await supabase
+        .from("platform_sku_map")
+        .select("platform_sku_id, product_id")
+        .eq("channel", orderChannel);
+      const skuMap = new Map<string, string>((skuMapRows ?? []).map((r) => [r.platform_sku_id, r.product_id]));
+
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -372,7 +379,7 @@ export default function SalesClient({
         return;
       }
 
-      interface OrderItem { sku: string; product_name: string; variation: string; qty: number; unit_price: number; subtotal_after_discount: number }
+      interface OrderItem { sku: string; product_name: string; variation: string; qty: number; unit_price: number; subtotal_after_discount: number; platform_sku_id: string }
       interface OrderGroup { order_no: string; items: OrderItem[] }
       const groups = new Map<string, OrderGroup>();
       let anonCounter = 0;
@@ -386,6 +393,7 @@ export default function SalesClient({
           qty: Number(r.qty) || 0,
           unit_price: Number(r.unit_price) || 0,
           subtotal_after_discount: Number(r.subtotal_after_discount) || 0,
+          platform_sku_id: String(r.platform_sku_id ?? "").trim(),
         });
       });
 
@@ -397,7 +405,20 @@ export default function SalesClient({
       // of the catalog product's name to appear somewhere in the combined product_name + variation
       // text. This correctly distinguishes near-duplicate catalog entries (e.g. "...คอทหารเรือใบ..."
       // vs "...ชายเรือใบ...") because every word — including the size token like "เบอร์44" — must hit.
-      function findProduct(sku: string, name: string, variation: string) {
+      //
+      // Platforms like TikTok Shop also provide a stable "SKU ID" per variant (a long numeric ID that
+      // never changes even if the seller edits the product name/variation text later). Once we've
+      // matched an item once via name/token matching, we remember its SKU ID -> product_id mapping in
+      // platform_sku_map so future imports of the same variant resolve instantly and unambiguously,
+      // without needing the text to line up again.
+      function findProduct(platformSkuId: string, sku: string, name: string, variation: string) {
+        if (platformSkuId) {
+          const mappedId = skuMap.get(platformSkuId);
+          if (mappedId) {
+            const byMap = productList.find((p) => p.id === mappedId);
+            if (byMap) return { product: byMap, ambiguous: false };
+          }
+        }
         if (sku) {
           const bySku = productList.find((p) => (p.sku ?? "").trim().toLowerCase() === sku.toLowerCase());
           if (bySku) return { product: bySku, ambiguous: false };
@@ -423,19 +444,23 @@ export default function SalesClient({
       let successCount = 0;
       const errors: string[] = [];
       const priceMismatches: string[] = [];
+      const newSkuMappings = new Map<string, string>();
 
       for (const g of groups.values()) {
         try {
           const items: { product_id: string; qty: number; discount: number }[] = [];
           let orderTotal = 0;
           for (const it of g.items) {
-            const { product, ambiguous } = findProduct(it.sku, it.product_name, it.variation);
+            const { product, ambiguous } = findProduct(it.platform_sku_id, it.sku, it.product_name, it.variation);
             if (!product) {
               throw new Error(
                 ambiguous
                   ? `พบสินค้าในระบบมากกว่า 1 รายการที่ตรงกับ "${it.product_name} ${it.variation}" ระบุไม่ได้ว่าเป็นตัวไหน`
                   : `ไม่พบสินค้า "${it.sku || `${it.product_name} ${it.variation}`.trim()}" ในระบบ`
               );
+            }
+            if (it.platform_sku_id && skuMap.get(it.platform_sku_id) !== product.id) {
+              newSkuMappings.set(it.platform_sku_id, product.id);
             }
             const catalogPrice = Number(product.sell_price);
             // Prefer the actual amount the platform paid out for this line (after seller/platform
@@ -475,10 +500,23 @@ export default function SalesClient({
         }
       }
 
+      if (newSkuMappings.size > 0) {
+        const upsertRows = Array.from(newSkuMappings.entries()).map(([platform_sku_id, product_id]) => ({
+          channel: orderChannel,
+          platform_sku_id,
+          product_id,
+        }));
+        const { error: mapErr } = await supabase
+          .from("platform_sku_map")
+          .upsert(upsertRows, { onConflict: "shop_id,channel,platform_sku_id" });
+        if (mapErr) console.error("บันทึกแมป SKU ID ไม่สำเร็จ", mapErr);
+      }
+
       setOrderImportMsg(
         `บันทึกสำเร็จ ${successCount} ออเดอร์ จากทั้งหมด ${groups.size} ออเดอร์ (ตัดสต๊อกแล้ว สถานะรอรับเงิน)` +
           (errors.length > 0 ? ` — ล้มเหลว ${errors.length}: ${errors.join(" | ")}` : "") +
-          (priceMismatches.length > 0 ? ` ⚠ ราคาต่างจากระบบ: ${priceMismatches.join(", ")}` : "")
+          (priceMismatches.length > 0 ? ` ⚠ ราคาต่างจากระบบ: ${priceMismatches.join(", ")}` : "") +
+          (newSkuMappings.size > 0 ? ` (จดจำ SKU ID สินค้าใหม่ ${newSkuMappings.size} รายการ ครั้งต่อไปจะจับคู่อัตโนมัติทันที)` : "")
       );
       router.refresh();
     } catch (err: any) {

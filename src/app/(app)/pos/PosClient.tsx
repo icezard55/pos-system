@@ -437,8 +437,45 @@ export default function PosClient({
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState<string | null>(null);
+  const [qrConfirmed, setQrConfirmed] = useState(false);
+
+  function playPaymentReceivedSound() {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      const now = ctx.currentTime;
+      const notes = [880, 1318.51]; // เสียงดิ้ง-ดิ้ง ไล่ระดับขึ้น คล้ายเสียงแจ้งเตือนเงินเข้า
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = now + i * 0.12;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.3, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.4);
+      });
+      window.setTimeout(() => ctx.close(), 800);
+    } catch (err) {
+      console.error("เล่นเสียงไม่สำเร็จ", err);
+    }
+  }
+
+  function handleConfirmPaymentReceived() {
+    playPaymentReceivedSound();
+    setQrConfirmed(true);
+    window.setTimeout(() => {
+      setQrAmount(null);
+      setQrConfirmed(false);
+    }, 900);
+  }
 
   useEffect(() => {
+    setQrConfirmed(false);
     if (qrAmount === null || !promptpayId) {
       setQrDataUrl(null);
       setQrError(null);
@@ -1297,13 +1334,33 @@ export default function PosClient({
             <p className="mb-3 text-2xl font-bold text-gray-900">
               ฿{qrAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
             </p>
-            {qrLoading && <p className="py-16 text-sm text-gray-400">กำลังสร้าง QR...</p>}
-            {qrError && <p className="text-sm text-red-600">{qrError}</p>}
-            {qrDataUrl && !qrLoading && !qrError && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={qrDataUrl} alt="QR พร้อมเพย์" className="mx-auto h-64 w-64 rounded-lg border" />
+            {qrConfirmed ? (
+              <div className="flex flex-col items-center justify-center py-10">
+                <div className="mb-2 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 text-3xl text-green-600">
+                  ✓
+                </div>
+                <p className="text-sm font-semibold text-green-700">ยืนยันรับเงินแล้ว</p>
+              </div>
+            ) : (
+              <>
+                {qrLoading && <p className="py-16 text-sm text-gray-400">กำลังสร้าง QR...</p>}
+                {qrError && <p className="text-sm text-red-600">{qrError}</p>}
+                {qrDataUrl && !qrLoading && !qrError && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={qrDataUrl} alt="QR พร้อมเพย์" className="mx-auto h-64 w-64 rounded-lg border" />
+                )}
+                <p className="mt-3 text-xs text-gray-400">ให้ลูกค้าสแกนด้วยแอปธนาคารเพื่อโอนยอดนี้โดยตรง</p>
+                {qrDataUrl && !qrLoading && !qrError && (
+                  <button
+                    type="button"
+                    onClick={handleConfirmPaymentReceived}
+                    className="mt-3 w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-white hover:bg-brand-dark"
+                  >
+                    ✅ ยืนยันได้รับเงินแล้ว
+                  </button>
+                )}
+              </>
             )}
-            <p className="mt-3 text-xs text-gray-400">ให้ลูกค้าสแกนด้วยแอปธนาคารเพื่อโอนยอดนี้โดยตรง</p>
           </div>
         </div>
       )}

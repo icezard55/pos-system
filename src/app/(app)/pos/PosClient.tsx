@@ -23,6 +23,7 @@ export default function PosClient({
   showVatOnReceipt = true,
   promotions = [],
   loyaltyRewards = [],
+  promptpayId = null,
 }: {
   shopId: string;
   products: Product[];
@@ -30,6 +31,7 @@ export default function PosClient({
   showVatOnReceipt?: boolean;
   promotions?: ActivePromotion[];
   loyaltyRewards?: LoyaltyReward[];
+  promptpayId?: string | null;
 }) {
   const supabase = createClient();
   const router = useRouter();
@@ -429,6 +431,42 @@ export default function PosClient({
       zxingReaderRef.current = null;
     };
   }, [showCameraScan]);
+
+  // QR พร้อมเพย์ - สร้างตอนเลือกวิธีชำระ "โอนเงิน"
+  const [qrAmount, setQrAmount] = useState<number | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (qrAmount === null || !promptpayId) {
+      setQrDataUrl(null);
+      setQrError(null);
+      return;
+    }
+    let cancelled = false;
+    setQrLoading(true);
+    setQrError(null);
+    (async () => {
+      try {
+        const [{ default: generatePayload }, qrcodeModule] = await Promise.all([
+          import("promptpay-qr"),
+          import("qrcode"),
+        ]);
+        const QRCode: any = (qrcodeModule as any).default ?? qrcodeModule;
+        const payload = generatePayload(promptpayId, { amount: qrAmount });
+        const dataUrl = await QRCode.toDataURL(payload, { width: 300, margin: 1 });
+        if (!cancelled) setQrDataUrl(dataUrl);
+      } catch (err: any) {
+        if (!cancelled) setQrError(err?.message ?? "สร้าง QR ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      } finally {
+        if (!cancelled) setQrLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [qrAmount, promptpayId]);
 
   async function handleCheckout() {
     if (cart.length === 0) return;
@@ -1060,6 +1098,16 @@ export default function PosClient({
                 <option value="credit" disabled={!selectedCustomer}>ขายเชื่อ {!selectedCustomer ? "(ต้องเลือกลูกค้าก่อน)" : ""}</option>
               </select>
 
+              {singleMethod === "transfer" && promptpayId && (
+                <button
+                  type="button"
+                  onClick={() => setQrAmount(total)}
+                  className="w-full rounded-lg border border-brand px-3 py-2 text-sm font-medium text-brand hover:bg-brand/5"
+                >
+                  📱 แสดง QR พร้อมเพย์ (฿{total.toLocaleString("th-TH", { minimumFractionDigits: 2 })})
+                </button>
+              )}
+
               {singleMethod === "cash" && (
                 <div className="space-y-1 rounded-lg border border-dashed p-2">
                   <label className="mb-1 block text-xs text-gray-600">รับเงินมา (บาท)</label>
@@ -1135,6 +1183,16 @@ export default function PosClient({
                           </span>
                         )}
                       </div>
+                    )}
+                    {row.method === "transfer" && promptpayId && (
+                      <button
+                        type="button"
+                        onClick={() => setQrAmount(Number(row.amount) || 0)}
+                        disabled={!(Number(row.amount) > 0)}
+                        className="ml-0.5 rounded-lg border border-brand px-2 py-1 text-[11px] font-medium text-brand hover:bg-brand/5 disabled:opacity-40"
+                      >
+                        📱 แสดง QR (฿{(Number(row.amount) || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })})
+                      </button>
                     )}
                   </div>
                 );
@@ -1217,6 +1275,35 @@ export default function PosClient({
                 ปิดกล้อง
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {qrAmount !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setQrAmount(null)}
+        >
+          <div
+            className="w-full max-w-xs rounded-2xl bg-white p-5 text-center shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-semibold text-gray-700">📱 QR พร้อมเพย์</span>
+              <button type="button" onClick={() => setQrAmount(null)} className="text-gray-400 hover:text-gray-600">
+                ✕
+              </button>
+            </div>
+            <p className="mb-3 text-2xl font-bold text-gray-900">
+              ฿{qrAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+            </p>
+            {qrLoading && <p className="py-16 text-sm text-gray-400">กำลังสร้าง QR...</p>}
+            {qrError && <p className="text-sm text-red-600">{qrError}</p>}
+            {qrDataUrl && !qrLoading && !qrError && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={qrDataUrl} alt="QR พร้อมเพย์" className="mx-auto h-64 w-64 rounded-lg border" />
+            )}
+            <p className="mt-3 text-xs text-gray-400">ให้ลูกค้าสแกนด้วยแอปธนาคารเพื่อโอนยอดนี้โดยตรง</p>
           </div>
         </div>
       )}

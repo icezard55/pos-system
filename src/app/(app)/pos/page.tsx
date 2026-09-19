@@ -35,6 +35,7 @@ export default async function PosPage() {
       products={products ?? []}
       barcodes={barcodes ?? []}
       showVatOnReceipt={shopSettings?.show_vat_on_receipt ?? true}
+      promptpayId={shopSettings?.promptpay_id ?? null}
       promotions={promotions ?? []}
       loyaltyRewards={loyaltyRewards ?? []}
     />

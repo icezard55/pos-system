@@ -14,6 +14,7 @@ export default function SettingsClient({ initialSettings }: { initialSettings: S
   const [webhookUrl, setWebhookUrl] = useState(initialSettings?.low_stock_webhook_url ?? "");
   const [bahtPerPoint, setBahtPerPoint] = useState(String(initialSettings?.baht_per_point ?? 100));
   const [showVat, setShowVat] = useState(initialSettings?.show_vat_on_receipt ?? true);
+  const [promptpayId, setPromptpayId] = useState(initialSettings?.promptpay_id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export default function SettingsClient({ initialSettings }: { initialSettings: S
         p_low_stock_webhook_url: webhookUrl || null,
         p_baht_per_point: Number(bahtPerPoint) || 100,
         p_show_vat_on_receipt: showVat,
+        p_promptpay_id: promptpayId.trim() || null,
       });
       if (error) throw error;
       setSuccess("บันทึกข้อมูลร้านสำเร็จ");
@@ -110,6 +112,21 @@ export default function SettingsClient({ initialSettings }: { initialSettings: S
           </label>
           <p className="mt-1 text-xs text-gray-400">
             ถ้าปิด ใบเสร็จจะไม่แสดงบรรทัดแยก VAT 7% ให้ลูกค้าเห็น (แต่ระบบยังคำนวณ VAT เก็บไว้ในฐานข้อมูลตามปกติ)
+          </p>
+        </div>
+
+        <h2 className="mt-2 font-semibold text-gray-800">รับชำระเงินผ่าน QR พร้อมเพย์</h2>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">เลขพร้อมเพย์ของร้าน</label>
+          <input
+            value={promptpayId}
+            onChange={(e) => setPromptpayId(e.target.value)}
+            placeholder="เบอร์โทร 10 หลัก หรือเลขบัตรประชาชน/เลขนิติบุคคล 13 หลัก"
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            ใส่เบอร์โทรหรือเลขบัตรประชาชนที่ผูกกับพร้อมเพย์ของร้าน ระบบจะใช้เลขนี้สร้าง QR โค้ดยอดเงินให้ตรงกับยอดขายอัตโนมัติ
+            ตอนเลือกวิธีชำระเงินแบบ "โอนเงิน" ในหน้า POS ถ้าปล่อยว่างไว้ ปุ่มแสดง QR จะไม่ปรากฏ
           </p>
         </div>
 

@@ -403,6 +403,7 @@ export interface ShopSettings {
   low_stock_webhook_url: string | null;
   baht_per_point: number;
   show_vat_on_receipt: boolean;
+  promptpay_id: string | null;
   updated_at: string;
 }
 

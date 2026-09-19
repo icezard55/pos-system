@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -41,6 +42,7 @@ export default function NavClient({
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -48,19 +50,22 @@ export default function NavClient({
     router.refresh();
   }
 
+  const filteredLinks = links.filter((l) => l.roles.includes(role));
+  const primaryLinks = filteredLinks.slice(0, 4);
+
   return (
-    <aside className="no-print flex w-64 shrink-0 flex-col bg-gray-900 text-white">
-      <div className="border-b border-gray-700 p-5">
-        <p className="text-sm font-semibold">ระบบขาย &amp; สต๊อกสินค้า</p>
-        <p className="mt-1 truncate text-xs text-gray-400">{fullName || email}</p>
-        <span className="mt-1 inline-block rounded bg-brand px-2 py-0.5 text-[10px] uppercase">
-          {role === "admin" ? "ผู้ดูแลระบบ" : "พนักงานขาย"}
-        </span>
-      </div>
-      <nav className="flex-1 space-y-1 p-3">
-        {links
-          .filter((l) => l.roles.includes(role))
-          .map((l) => (
+    <>
+      {/* เมนูด้านข้าง - จอคอมพิวเตอร์/แท็บเล็ตแนวนอน */}
+      <aside className="no-print hidden bg-gray-900 text-white lg:flex lg:w-64 lg:shrink-0 lg:flex-col">
+        <div className="border-b border-gray-700 p-5">
+          <p className="text-sm font-semibold">ระบบขาย &amp; สต๊อกสินค้า</p>
+          <p className="mt-1 truncate text-xs text-gray-400">{fullName || email}</p>
+          <span className="mt-1 inline-block rounded bg-brand px-2 py-0.5 text-[10px] uppercase">
+            {role === "admin" ? "ผู้ดูแลระบบ" : "พนักงานขาย"}
+          </span>
+        </div>
+        <nav className="flex-1 space-y-1 p-3">
+          {filteredLinks.map((l) => (
             <Link
               key={l.href}
               href={l.href}
@@ -72,29 +77,125 @@ export default function NavClient({
               {l.label}
             </Link>
           ))}
-        {isPlatformOwner && (
-          <>
-            <div className="my-2 border-t border-gray-700" />
-            <Link
-              href={ownerLink.href}
-              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
-                pathname === ownerLink.href ? "bg-brand text-white" : "text-gray-300 hover:bg-gray-800"
-              }`}
-            >
-              <span>{ownerLink.icon}</span>
-              {ownerLink.label}
-            </Link>
-          </>
-        )}
-      </nav>
-      <div className="border-t border-gray-700 p-3">
+          {isPlatformOwner && (
+            <>
+              <div className="my-2 border-t border-gray-700" />
+              <Link
+                href={ownerLink.href}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                  pathname === ownerLink.href ? "bg-brand text-white" : "text-gray-300 hover:bg-gray-800"
+                }`}
+              >
+                <span>{ownerLink.icon}</span>
+                {ownerLink.label}
+              </Link>
+            </>
+          )}
+        </nav>
+        <div className="border-t border-gray-700 p-3">
+          <button
+            onClick={handleSignOut}
+            className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-800"
+          >
+            🚪 ออกจากระบบ
+          </button>
+        </div>
+      </aside>
+
+      {/* แท็บด้านล่าง - จอมือถือ */}
+      <nav className="no-print fixed inset-x-0 bottom-0 z-40 flex border-t border-gray-800 bg-gray-900 pb-[env(safe-area-inset-bottom)] lg:hidden">
+        {primaryLinks.map((l) => (
+          <Link
+            key={l.href}
+            href={l.href}
+            onClick={() => setMenuOpen(false)}
+            className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${
+              pathname === l.href ? "text-brand" : "text-gray-400"
+            }`}
+          >
+            <span className="text-lg leading-none">{l.icon}</span>
+            {l.label}
+          </Link>
+        ))}
         <button
-          onClick={handleSignOut}
-          className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-800"
+          type="button"
+          onClick={() => setMenuOpen(true)}
+          className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] ${
+            menuOpen ? "text-brand" : "text-gray-400"
+          }`}
         >
-          🚪 ออกจากระบบ
+          <span className="text-lg leading-none">☰</span>
+          เมนู
         </button>
-      </div>
-    </aside>
+      </nav>
+
+      {/* เมนูแบบเต็ม - เปิดจากปุ่ม "เมนู" บนมือถือ */}
+      {menuOpen && (
+        <div
+          className="no-print fixed inset-0 z-50 flex flex-col justify-end bg-black/60 lg:hidden"
+          onClick={() => setMenuOpen(false)}
+        >
+          <div
+            className="max-h-[85vh] overflow-y-auto rounded-t-2xl bg-gray-900 text-white"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-700 p-4">
+              <div>
+                <p className="text-sm font-semibold">{fullName || email}</p>
+                <span className="mt-1 inline-block rounded bg-brand px-2 py-0.5 text-[10px] uppercase">
+                  {role === "admin" ? "ผู้ดูแลระบบ" : "พนักงานขาย"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-800"
+                aria-label="ปิดเมนู"
+              >
+                ✕
+              </button>
+            </div>
+            <nav className="space-y-1 p-3">
+              {filteredLinks.map((l) => (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  onClick={() => setMenuOpen(false)}
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                    pathname === l.href ? "bg-brand text-white" : "text-gray-300 hover:bg-gray-800"
+                  }`}
+                >
+                  <span>{l.icon}</span>
+                  {l.label}
+                </Link>
+              ))}
+              {isPlatformOwner && (
+                <>
+                  <div className="my-2 border-t border-gray-700" />
+                  <Link
+                    href={ownerLink.href}
+                    onClick={() => setMenuOpen(false)}
+                    className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition ${
+                      pathname === ownerLink.href ? "bg-brand text-white" : "text-gray-300 hover:bg-gray-800"
+                    }`}
+                  >
+                    <span>{ownerLink.icon}</span>
+                    {ownerLink.label}
+                  </Link>
+                </>
+              )}
+            </nav>
+            <div className="border-t border-gray-700 p-3">
+              <button
+                onClick={handleSignOut}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-300 hover:bg-gray-800"
+              >
+                🚪 ออกจากระบบ
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

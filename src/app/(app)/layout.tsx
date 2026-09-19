@@ -29,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         role={(profile?.role as "admin" | "cashier") ?? "cashier"}
         isPlatformOwner={profile?.is_platform_owner ?? false}
       />
-      <main className="flex-1 p-4 md:p-8">{children}</main>
+      <main className="flex-1 p-4 pb-24 md:p-8 lg:pb-8">{children}</main>
     </div>
   );
 }

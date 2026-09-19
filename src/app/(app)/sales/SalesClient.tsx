@@ -66,6 +66,49 @@ interface ImportedBillGroup {
   items: ImportedItem[];
 }
 
+interface PlatformOrderItem {
+  sku: string;
+  product_name: string;
+  variation: string;
+  qty: number;
+  unit_price: number;
+  subtotal_after_discount: number;
+  platform_sku_id: string;
+}
+interface PlatformOrderGroup {
+  order_no: string;
+  items: PlatformOrderItem[];
+}
+interface CatalogProduct {
+  id: string;
+  sku: string | null;
+  name: string;
+  sell_price: number;
+  stock_qty: number;
+}
+interface UnresolvedSkuItem {
+  platform_sku_id: string;
+  product_name: string;
+  variation: string;
+  qty: number;
+}
+
+// นำเข้าออเดอร์จากแพลตฟอร์ม: จับคู่สินค้าด้วย "SKU ID" ของแพลตฟอร์ม (เช่น TikTok Shop) เท่านั้น —
+// เป็นรหัสประจำตัวสินค้าแต่ละแบบ/แต่ละไซซ์ที่แพลตฟอร์มกำหนดคงที่ตลอด ไม่เปลี่ยนแม้แก้ชื่อสินค้าทีหลัง
+// จึงแม่นยำกว่าการเทียบชื่อ/ตัวเลือกสินค้าแบบข้อความ หาก SKU ID ในไฟล์ยังไม่เคยจับคู่กับสินค้าใดในระบบ
+// (เก็บอยู่ใน platform_sku_map) จะถือว่าจับคู่ไม่ได้ — ต้องให้ผู้ใช้จับคู่เองครั้งแรกผ่านหน้าต่างยืนยัน
+// ก่อน ระบบถึงจะจดจำไว้ใช้ในครั้งต่อไปอัตโนมัติ
+function findProductBySkuId(
+  skuMap: Map<string, string>,
+  productList: CatalogProduct[],
+  platformSkuId: string
+): CatalogProduct | null {
+  if (!platformSkuId) return null;
+  const productId = skuMap.get(platformSkuId);
+  if (!productId) return null;
+  return productList.find((p) => p.id === productId) ?? null;
+}
+
 export default function SalesClient({
   sales,
   isAdmin,
@@ -109,6 +152,19 @@ export default function SalesClient({
   const [importingOrders, setImportingOrders] = useState(false);
   const [orderImportMsg, setOrderImportMsg] = useState<string | null>(null);
   const orderFileRef = useRef<HTMLInputElement>(null);
+
+  // ยืนยันจับคู่ SKU ID ใหม่ที่ระบบยังไม่รู้จัก ก่อนนำเข้าออเดอร์ที่เกี่ยวข้อง
+  const [unresolvedSkuItems, setUnresolvedSkuItems] = useState<UnresolvedSkuItem[]>([]);
+  const [skuResolutions, setSkuResolutions] = useState<Record<string, string>>({});
+  const [resolvingImport, setResolvingImport] = useState(false);
+  const pendingImportRef = useRef<{
+    groups: Map<string, PlatformOrderGroup>;
+    productList: CatalogProduct[];
+    skuMap: Map<string, string>;
+    channel: SaleChannel;
+    platformName: string;
+    feePct: string;
+  } | null>(null);
 
   const filtered = sales.filter(
     (s) =>
@@ -335,6 +391,77 @@ export default function SalesClient({
     XLSX.writeFile(wb, `ประวัติการขาย_${start}_ถึง_${end}.xlsx`);
   }
 
+  async function commitPlatformImport(
+    groups: Map<string, PlatformOrderGroup>,
+    productList: CatalogProduct[],
+    skuMap: Map<string, string>,
+    channel: SaleChannel,
+    platformName: string,
+    feePct: string
+  ) {
+    let successCount = 0;
+    const errors: string[] = [];
+    const priceMismatches: string[] = [];
+
+    for (const g of groups.values()) {
+      try {
+        const items: { product_id: string; qty: number; discount: number }[] = [];
+        let orderTotal = 0;
+        for (const it of g.items) {
+          const product = findProductBySkuId(skuMap, productList, it.platform_sku_id);
+          if (!product) {
+            throw new Error(
+              it.platform_sku_id
+                ? `ยังไม่ได้จับคู่ SKU ID "${it.platform_sku_id}" (${it.product_name} ${it.variation}) กับสินค้าในระบบ`
+                : `แถวสินค้า "${it.product_name || it.sku}" ไม่มี SKU ID ในไฟล์ จับคู่ไม่ได้`
+            );
+          }
+          const catalogPrice = Number(product.sell_price);
+          // Prefer the actual amount the platform paid out for this line (after seller/platform
+          // discounts) when the file provides it — that's what should reconcile against our
+          // catalog price, not the pre-discount unit price.
+          const filePrice =
+            it.subtotal_after_discount > 0 && it.qty > 0
+              ? Math.round((it.subtotal_after_discount / it.qty) * 100) / 100
+              : it.unit_price > 0
+              ? it.unit_price
+              : catalogPrice;
+          const discount = Math.round(Math.max(0, (catalogPrice - filePrice) * it.qty) * 100) / 100;
+          if (filePrice > catalogPrice) {
+            priceMismatches.push(`${product.name}: ไฟล์ ฿${filePrice} > ราคาในระบบ ฿${catalogPrice} (บันทึกตามราคาระบบ)`);
+          }
+          items.push({ product_id: product.id, qty: it.qty, discount });
+          orderTotal += catalogPrice * it.qty - discount;
+        }
+        orderTotal = Math.round(orderTotal * 100) / 100;
+
+        const { error: rpcError } = await supabase.rpc("create_sale", {
+          p_items: items,
+          p_payments: [{ method: "transfer", amount: orderTotal }],
+          p_bill_discount: 0,
+          p_customer_id: null,
+          p_customer_name: g.order_no || null,
+          p_customer_tax_id: null,
+          p_customer_address: null,
+          p_channel: channel,
+          p_platform_name: channel === "other" ? platformName.trim() || null : null,
+          p_platform_fee_pct: Number(feePct) > 0 ? Number(feePct) : null,
+        });
+        if (rpcError) throw rpcError;
+        successCount++;
+      } catch (err: any) {
+        errors.push(`${g.order_no || "(ไม่ระบุเลขออเดอร์)"}: ${err.message ?? err}`);
+      }
+    }
+
+    setOrderImportMsg(
+      `บันทึกสำเร็จ ${successCount} ออเดอร์ จากทั้งหมด ${groups.size} ออเดอร์ (ตัดสต๊อกแล้ว สถานะรอรับเงิน)` +
+        (errors.length > 0 ? ` — ล้มเหลว ${errors.length}: ${errors.join(" | ")}` : "") +
+        (priceMismatches.length > 0 ? ` ⚠ ราคาต่างจากระบบ: ${priceMismatches.join(", ")}` : "")
+    );
+    router.refresh();
+  }
+
   async function handleImportOrders(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -350,7 +477,7 @@ export default function SalesClient({
         .select("id, sku, name, sell_price, stock_qty")
         .eq("is_active", true);
       if (prodErr) throw prodErr;
-      const productList = productRows ?? [];
+      const productList: CatalogProduct[] = productRows ?? [];
 
       const { data: skuMapRows } = await supabase
         .from("platform_sku_map")
@@ -375,13 +502,11 @@ export default function SalesClient({
         .filter((r) => (r.qty && Number(r.qty) > 0) && (String(r.sku ?? "").trim() || String(r.product_name ?? "").trim()));
 
       if (rows.length === 0) {
-        setOrderImportMsg("ไม่พบข้อมูลที่ใช้ได้ในไฟล์ กรุณาตรวจสอบหัวคอลัมน์ เช่น เลขออเดอร์, สินค้า, จำนวน, ราคาต่อหน่วย");
+        setOrderImportMsg("ไม่พบข้อมูลที่ใช้ได้ในไฟล์ กรุณาตรวจสอบหัวคอลัมน์ เช่น เลขออเดอร์, สินค้า, จำนวน, ราคาต่อหน่วย, SKU ID");
         return;
       }
 
-      interface OrderItem { sku: string; product_name: string; variation: string; qty: number; unit_price: number; subtotal_after_discount: number; platform_sku_id: string }
-      interface OrderGroup { order_no: string; items: OrderItem[] }
-      const groups = new Map<string, OrderGroup>();
+      const groups = new Map<string, PlatformOrderGroup>();
       let anonCounter = 0;
       rows.forEach((r) => {
         const orderNo = String(r.order_no ?? "").trim() || `__anon_${anonCounter++}`;
@@ -397,134 +522,91 @@ export default function SalesClient({
         });
       });
 
-      // Thai/English platform export files (e.g. TikTok Shop) often split the product name and its
-      // chosen size/color into separate "Product Name" + "Variation" columns, and don't fill in a
-      // Seller SKU at all. Our catalog instead stores one short, specific name per variant (e.g.
-      // "รองเท้าแตะดาวเทียมผ้า เบอร์10.5"). A plain substring check in either direction rarely lines
-      // up, so once SKU/exact-name matching fails, fall back to requiring every space-separated word
-      // of the catalog product's name to appear somewhere in the combined product_name + variation
-      // text. This correctly distinguishes near-duplicate catalog entries (e.g. "...คอทหารเรือใบ..."
-      // vs "...ชายเรือใบ...") because every word — including the size token like "เบอร์44" — must hit.
-      //
-      // Platforms like TikTok Shop also provide a stable "SKU ID" per variant (a long numeric ID that
-      // never changes even if the seller edits the product name/variation text later). Once we've
-      // matched an item once via name/token matching, we remember its SKU ID -> product_id mapping in
-      // platform_sku_map so future imports of the same variant resolve instantly and unambiguously,
-      // without needing the text to line up again.
-      function findProduct(platformSkuId: string, sku: string, name: string, variation: string) {
-        if (platformSkuId) {
-          const mappedId = skuMap.get(platformSkuId);
-          if (mappedId) {
-            const byMap = productList.find((p) => p.id === mappedId);
-            if (byMap) return { product: byMap, ambiguous: false };
-          }
-        }
-        if (sku) {
-          const bySku = productList.find((p) => (p.sku ?? "").trim().toLowerCase() === sku.toLowerCase());
-          if (bySku) return { product: bySku, ambiguous: false };
-        }
-        if (name) {
-          const exact = productList.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
-          if (exact) return { product: exact, ambiguous: false };
-          const contains = productList.filter((p) => p.name.toLowerCase().includes(name.toLowerCase()));
-          if (contains.length === 1) return { product: contains[0], ambiguous: false };
-        }
-        const combined = `${name} ${variation}`.toLowerCase();
-        if (combined.trim()) {
-          const tokenMatches = productList.filter((p) => {
-            const words = p.name.toLowerCase().split(/\s+/).filter(Boolean);
-            return words.length > 0 && words.every((w: string) => combined.includes(w));
-          });
-          if (tokenMatches.length === 1) return { product: tokenMatches[0], ambiguous: false };
-          if (tokenMatches.length > 1) return { product: null, ambiguous: true };
-        }
-        return { product: null, ambiguous: false };
-      }
-
-      let successCount = 0;
-      const errors: string[] = [];
-      const priceMismatches: string[] = [];
-      const newSkuMappings = new Map<string, string>();
-
+      // จับคู่ด้วย SKU ID เท่านั้น (เข้มงวด) — เก็บรายการ SKU ID ที่มีในไฟล์แต่ยังไม่เคยจับคู่กับ
+      // สินค้าในระบบไว้ใน unresolved เพื่อให้ผู้ใช้ยืนยันจับคู่เองก่อน ค่อยนำเข้าออเดอร์ที่เกี่ยวข้องต่อ
+      const unresolvedMap = new Map<string, UnresolvedSkuItem>();
       for (const g of groups.values()) {
-        try {
-          const items: { product_id: string; qty: number; discount: number }[] = [];
-          let orderTotal = 0;
-          for (const it of g.items) {
-            const { product, ambiguous } = findProduct(it.platform_sku_id, it.sku, it.product_name, it.variation);
-            if (!product) {
-              throw new Error(
-                ambiguous
-                  ? `พบสินค้าในระบบมากกว่า 1 รายการที่ตรงกับ "${it.product_name} ${it.variation}" ระบุไม่ได้ว่าเป็นตัวไหน`
-                  : `ไม่พบสินค้า "${it.sku || `${it.product_name} ${it.variation}`.trim()}" ในระบบ`
-              );
-            }
-            if (it.platform_sku_id && skuMap.get(it.platform_sku_id) !== product.id) {
-              newSkuMappings.set(it.platform_sku_id, product.id);
-            }
-            const catalogPrice = Number(product.sell_price);
-            // Prefer the actual amount the platform paid out for this line (after seller/platform
-            // discounts) when the file provides it — that's what should reconcile against our
-            // catalog price, not the pre-discount unit price.
-            const filePrice =
-              it.subtotal_after_discount > 0 && it.qty > 0
-                ? Math.round((it.subtotal_after_discount / it.qty) * 100) / 100
-                : it.unit_price > 0
-                ? it.unit_price
-                : catalogPrice;
-            const discount = Math.round(Math.max(0, (catalogPrice - filePrice) * it.qty) * 100) / 100;
-            if (filePrice > catalogPrice) {
-              priceMismatches.push(`${product.name}: ไฟล์ ฿${filePrice} > ราคาในระบบ ฿${catalogPrice} (บันทึกตามราคาระบบ)`);
-            }
-            items.push({ product_id: product.id, qty: it.qty, discount });
-            orderTotal += catalogPrice * it.qty - discount;
+        for (const it of g.items) {
+          if (!it.platform_sku_id) continue;
+          if (skuMap.has(it.platform_sku_id)) continue;
+          const existing = unresolvedMap.get(it.platform_sku_id);
+          if (existing) {
+            existing.qty += it.qty;
+          } else {
+            unresolvedMap.set(it.platform_sku_id, {
+              platform_sku_id: it.platform_sku_id,
+              product_name: it.product_name,
+              variation: it.variation,
+              qty: it.qty,
+            });
           }
-          orderTotal = Math.round(orderTotal * 100) / 100;
-
-          const { error: rpcError } = await supabase.rpc("create_sale", {
-            p_items: items,
-            p_payments: [{ method: "transfer", amount: orderTotal }],
-            p_bill_discount: 0,
-            p_customer_id: null,
-            p_customer_name: g.order_no ? `ออเดอร์ ${g.order_no}` : null,
-            p_customer_tax_id: null,
-            p_customer_address: null,
-            p_channel: orderChannel,
-            p_platform_name: orderChannel === "other" ? orderPlatformName.trim() || null : null,
-            p_platform_fee_pct: Number(orderFeePct) > 0 ? Number(orderFeePct) : null,
-          });
-          if (rpcError) throw rpcError;
-          successCount++;
-        } catch (err: any) {
-          errors.push(`${g.order_no || "(ไม่ระบุเลขออเดอร์)"}: ${err.message ?? err}`);
         }
       }
 
-      if (newSkuMappings.size > 0) {
-        const upsertRows = Array.from(newSkuMappings.entries()).map(([platform_sku_id, product_id]) => ({
+      if (unresolvedMap.size > 0) {
+        pendingImportRef.current = {
+          groups,
+          productList,
+          skuMap,
           channel: orderChannel,
-          platform_sku_id,
-          product_id,
-        }));
-        const { error: mapErr } = await supabase
-          .from("platform_sku_map")
-          .upsert(upsertRows, { onConflict: "shop_id,channel,platform_sku_id" });
-        if (mapErr) console.error("บันทึกแมป SKU ID ไม่สำเร็จ", mapErr);
+          platformName: orderPlatformName,
+          feePct: orderFeePct,
+        };
+        setUnresolvedSkuItems(Array.from(unresolvedMap.values()));
+        setSkuResolutions({});
+        setOrderImportMsg(null);
+        return;
       }
 
-      setOrderImportMsg(
-        `บันทึกสำเร็จ ${successCount} ออเดอร์ จากทั้งหมด ${groups.size} ออเดอร์ (ตัดสต๊อกแล้ว สถานะรอรับเงิน)` +
-          (errors.length > 0 ? ` — ล้มเหลว ${errors.length}: ${errors.join(" | ")}` : "") +
-          (priceMismatches.length > 0 ? ` ⚠ ราคาต่างจากระบบ: ${priceMismatches.join(", ")}` : "") +
-          (newSkuMappings.size > 0 ? ` (จดจำ SKU ID สินค้าใหม่ ${newSkuMappings.size} รายการ ครั้งต่อไปจะจับคู่อัตโนมัติทันที)` : "")
-      );
-      router.refresh();
+      await commitPlatformImport(groups, productList, skuMap, orderChannel, orderPlatformName, orderFeePct);
     } catch (err: any) {
       setOrderImportMsg(`นำเข้าไม่สำเร็จ: ${err.message ?? err}`);
     } finally {
       setImportingOrders(false);
       if (orderFileRef.current) orderFileRef.current.value = "";
     }
+  }
+
+  async function handleConfirmSkuResolutions() {
+    const pending = pendingImportRef.current;
+    if (!pending) return;
+    setResolvingImport(true);
+    try {
+      const resolvedEntries = Object.entries(skuResolutions).filter(([, productId]) => productId);
+      if (resolvedEntries.length > 0) {
+        const upsertRows = resolvedEntries.map(([platform_sku_id, product_id]) => ({
+          channel: pending.channel,
+          platform_sku_id,
+          product_id,
+        }));
+        const { error: mapErr } = await supabase
+          .from("platform_sku_map")
+          .upsert(upsertRows, { onConflict: "shop_id,channel,platform_sku_id" });
+        if (mapErr) throw mapErr;
+      }
+      const mergedSkuMap = new Map(pending.skuMap);
+      resolvedEntries.forEach(([platform_sku_id, product_id]) => mergedSkuMap.set(platform_sku_id, product_id));
+
+      setUnresolvedSkuItems([]);
+      setSkuResolutions({});
+      pendingImportRef.current = null;
+
+      await commitPlatformImport(pending.groups, pending.productList, mergedSkuMap, pending.channel, pending.platformName, pending.feePct);
+    } catch (err: any) {
+      setOrderImportMsg(`จับคู่ SKU ID ไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setResolvingImport(false);
+      setImportingOrders(false);
+      if (orderFileRef.current) orderFileRef.current.value = "";
+    }
+  }
+
+  function handleCancelSkuResolve() {
+    pendingImportRef.current = null;
+    setUnresolvedSkuItems([]);
+    setSkuResolutions({});
+    setImportingOrders(false);
+    if (orderFileRef.current) orderFileRef.current.value = "";
   }
 
   return (
@@ -607,14 +689,76 @@ export default function SalesClient({
             </label>
           </div>
           <p className="text-xs text-gray-400">
-            รองรับไฟล์ออเดอร์จากแพลตฟอร์มที่มีคอลัมน์ เลขออเดอร์, วันที่, สินค้า (หรือรหัสสินค้า), จำนวน, ราคาต่อหน่วย —
-            จับคู่สินค้าด้วยรหัส/ชื่อ ตัดสต๊อกจริง และตั้งสถานะเป็น "รอรับเงิน" ให้อัตโนมัติ (ยืนยันรับเงินได้ในตารางด้านล่างเมื่อแพลตฟอร์มโอนเงินมาแล้ว)
+            รองรับไฟล์ออเดอร์จากแพลตฟอร์มที่มีคอลัมน์ เลขออเดอร์, วันที่, สินค้า, จำนวน, ราคาต่อหน่วย, SKU ID —
+            จับคู่สินค้าด้วย "SKU ID" ของแพลตฟอร์มเท่านั้น (แม่นยำกว่าจับคู่ด้วยชื่อ) ถ้าเจอ SKU ID ที่ยังไม่เคยจับคู่
+            ระบบจะให้เลือกสินค้าที่ตรงกันก่อน 1 ครั้ง แล้วจดจำไว้ใช้อัตโนมัติในครั้งต่อไป ตัดสต๊อกจริงและตั้งสถานะเป็น
+            "รอรับเงิน" ให้อัตโนมัติ (ยืนยันรับเงินได้ในตารางด้านล่างเมื่อแพลตฟอร์มโอนเงินมาแล้ว)
           </p>
           {orderImportMsg && <p className="text-xs text-blue-700">{orderImportMsg}</p>}
         </div>
       )}
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
+      {unresolvedSkuItems.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="mb-1 text-base font-semibold text-gray-800">พบ SKU ID ใหม่ {unresolvedSkuItems.length} รายการ</h3>
+            <p className="mb-3 text-xs text-gray-500">
+              ระบบจับคู่สินค้าด้วย SKU ID ของแพลตฟอร์มเท่านั้น รายการด้านล่างนี้ยังไม่เคยจับคู่กับสินค้าในระบบ —
+              เลือกสินค้าที่ตรงกัน (หรือข้าม) แล้วกดยืนยัน ระบบจะจดจำไว้ใช้อัตโนมัติในครั้งต่อไป
+            </p>
+            <div className="max-h-80 space-y-2 overflow-y-auto">
+              {unresolvedSkuItems.map((it) => (
+                <div key={it.platform_sku_id} className="rounded-lg border p-2">
+                  <p className="text-sm font-medium text-gray-800">
+                    {it.product_name} {it.variation && <span className="text-gray-500">({it.variation})</span>}
+                  </p>
+                  <p className="mb-1.5 text-[11px] text-gray-400">
+                    SKU ID: {it.platform_sku_id} · จำนวนในไฟล์นี้ {it.qty} ชิ้น
+                  </p>
+                  <select
+                    value={skuResolutions[it.platform_sku_id] ?? ""}
+                    onChange={(e) =>
+                      setSkuResolutions((prev) => ({ ...prev, [it.platform_sku_id]: e.target.value }))
+                    }
+                    className="w-full rounded-lg border px-2 py-1.5 text-sm"
+                  >
+                    <option value="">-- ข้าม (ไม่นำเข้ารายการนี้) --</option>
+                    {(pendingImportRef.current?.productList ?? [])
+                      .slice()
+                      .sort((a, b) => a.name.localeCompare(b.name, "th"))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                          {p.sku ? ` (${p.sku})` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={handleCancelSkuResolve}
+                disabled={resolvingImport}
+                className="flex-1 rounded-lg border py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSkuResolutions}
+                disabled={resolvingImport}
+                className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
+              >
+                {resolvingImport ? "กำลังนำเข้า..." : "ยืนยันการจับคู่และนำเข้าต่อ"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {voidTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

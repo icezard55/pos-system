@@ -1,12 +1,36 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { ShopSettings } from "@/lib/types";
 
-export default function SettingsClient({ initialSettings }: { initialSettings: ShopSettings | null }) {
+export default function SettingsClient({
+  initialSettings,
+  shopSlug,
+}: {
+  initialSettings: ShopSettings | null;
+  shopSlug: string | null;
+}) {
   const router = useRouter();
   const supabase = createClient();
+  const [storeUrl, setStoreUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (shopSlug && typeof window !== "undefined") {
+      setStoreUrl(`${window.location.origin}/shop/${shopSlug}`);
+    }
+  }, [shopSlug]);
+
+  async function handleCopyStoreUrl() {
+    try {
+      await navigator.clipboard.writeText(storeUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard API ไม่พร้อมใช้งาน (เช่น เบราว์เซอร์เก่า) - ให้ผู้ใช้คัดลอกเองจากช่องข้อความ
+    }
+  }
   const [shopName, setShopName] = useState(initialSettings?.shop_name ?? "");
   const [taxId, setTaxId] = useState(initialSettings?.tax_id ?? "");
   const [address, setAddress] = useState(initialSettings?.address ?? "");
@@ -66,6 +90,22 @@ export default function SettingsClient({ initialSettings }: { initialSettings: S
   return (
     <div className="max-w-2xl">
       <h1 className="mb-6 text-2xl font-bold">ตั้งค่าร้านค้า</h1>
+
+      {storeUrl && (
+        <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm">
+          <h2 className="mb-1 font-semibold text-gray-800">ลิงก์หน้าร้านค้าออนไลน์</h2>
+          <p className="mb-3 text-xs text-gray-400">แชร์ลิงก์นี้ให้ลูกค้าเข้ามาเลือกซื้อสินค้าและสั่งซื้อออนไลน์ได้เลย</p>
+          <div className="flex flex-wrap gap-2">
+            <input readOnly value={storeUrl} onFocus={(e) => e.target.select()} className="min-w-[220px] flex-1 rounded-lg border bg-gray-50 px-3 py-2 text-sm" />
+            <button type="button" onClick={handleCopyStoreUrl} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
+              {copied ? "✅ คัดลอกแล้ว" : "📋 คัดลอกลิงก์"}
+            </button>
+            <a href={storeUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark">
+              🔗 เปิดดูหน้าร้าน
+            </a>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="mb-8 grid gap-4 rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="font-semibold text-gray-800">ข้อมูลร้าน (ใช้แสดงบนใบเสร็จ/ใบกำกับภาษี)</h2>

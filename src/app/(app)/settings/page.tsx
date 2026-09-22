@@ -7,10 +7,11 @@ export default async function SettingsPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  const { data: profile } = await supabase.from("profiles").select("role, shop_id").eq("id", user!.id).single();
   if (profile?.role !== "admin") redirect("/dashboard");
 
   const { data: settings } = await supabase.from("shop_settings").select("*").maybeSingle();
+  const { data: shop } = await supabase.from("shops").select("slug").eq("id", profile.shop_id).maybeSingle();
 
-  return <SettingsClient initialSettings={settings} />;
+  return <SettingsClient initialSettings={settings} shopSlug={shop?.slug ?? null} />;
 }

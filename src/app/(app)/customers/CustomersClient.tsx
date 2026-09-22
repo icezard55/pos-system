@@ -1,9 +1,33 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
 import type { Customer, CustomerType } from "@/lib/types";
 import { CUSTOMER_TYPE_LABEL } from "@/lib/types";
+
+const CUSTOMER_HEADER_MAP: Record<string, string> = {
+  "ชื่อลูกค้า": "name",
+  "ชื่อ": "name",
+  "name": "name",
+  "เบอร์โทร": "phone",
+  "เบอร์โทรศัพท์": "phone",
+  "phone": "phone",
+  "ประเภทลูกค้า": "customer_type",
+  "ประเภท": "customer_type",
+  "customer_type": "customer_type",
+  "วงเงินเชื่อ": "credit_limit",
+  "วงเงินเครดิต": "credit_limit",
+  "credit_limit": "credit_limit",
+  "หมายเหตุ": "note",
+  "note": "note",
+};
+
+function normalizeCustomerType(v: any): string {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (s.includes("ส่ง") || s === "wholesale") return "wholesale";
+  return "retail";
+}
 
 export default function CustomersClient({
   initialCustomers,
@@ -28,6 +52,8 @@ export default function CustomersClient({
   const [error, setError] = useState<string | null>(null);
   const [payTarget, setPayTarget] = useState<Customer | null>(null);
   const [payAmount, setPayAmount] = useState("");
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const filtered = customers.filter(
     (c) => c.name.toLowerCase().includes(search.toLowerCase()) || (c.phone ?? "").includes(search)
@@ -89,6 +115,63 @@ export default function CustomersClient({
     }
   }
 
+  async function refreshCustomers() {
+    const { data } = await supabase.from("customers").select("*").order("created_at", { ascending: false });
+    setCustomers(data ?? []);
+  }
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    setImportMsg(null);
+    setError(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
+
+      const rows = raw
+        .map((row) => {
+          const mapped: Record<string, any> = {};
+          for (const key of Object.keys(row)) {
+            const norm = CUSTOMER_HEADER_MAP[key.trim()] ?? CUSTOMER_HEADER_MAP[key.trim().toLowerCase()];
+            if (norm) mapped[norm] = row[key];
+          }
+          if (mapped.customer_type) mapped.customer_type = normalizeCustomerType(mapped.customer_type);
+          return mapped;
+        })
+        .filter((r) => r.name && String(r.name).trim() !== "");
+
+      if (rows.length === 0) {
+        setImportMsg("ไม่พบข้อมูลลูกค้าในไฟล์ กรุณาตรวจสอบหัวคอลัมน์ เช่น ชื่อลูกค้า, เบอร์โทร, ประเภทลูกค้า");
+        setBusy(false);
+        return;
+      }
+
+      const { data, error } = await supabase.rpc("import_customers", { p_rows: rows });
+      if (error) throw error;
+      setImportMsg(`นำเข้าสำเร็จ ${data} รายการ (ลูกค้าที่เบอร์โทรตรงกับที่มีอยู่แล้วจะอัปเดตข้อมูลแทนการเพิ่มซ้ำ)`);
+      await refreshCustomers();
+      router.refresh();
+    } catch (err: any) {
+      setImportMsg(`นำเข้าไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  function downloadCustomerTemplate() {
+    const ws = XLSX.utils.json_to_sheet([
+      { "ชื่อลูกค้า": "ตัวอย่างชื่อลูกค้า", "เบอร์โทร": "0812345678", "ประเภทลูกค้า": "ลูกค้าทั่วไป", "วงเงินเชื่อ": 0, "หมายเหตุ": "" },
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "customers");
+    XLSX.writeFile(wb, "template_นำเข้าลูกค้า.xlsx");
+  }
+
   async function handlePayCredit(e: React.FormEvent) {
     e.preventDefault();
     if (!payTarget) return;
@@ -117,14 +200,29 @@ export default function CustomersClient({
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">ลูกค้า / สมาชิก</h1>
-        <button
-          onClick={() => setShowAdd((v) => !v)}
-          className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
-        >
-          {showAdd ? "ยกเลิก" : "+ เพิ่มลูกค้า"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={downloadCustomerTemplate} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
+            ⬇️ ดาวน์โหลดเทมเพลต
+          </button>
+          <label className="cursor-pointer rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
+            📥 นำเข้าจาก Excel/CSV
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleImportFile} className="hidden" />
+          </label>
+          <button
+            onClick={() => setShowAdd((v) => !v)}
+            className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark"
+          >
+            {showAdd ? "ยกเลิก" : "+ เพิ่มลูกค้า"}
+          </button>
+        </div>
       </div>
 
+      <p className="mb-4 text-xs text-gray-400">
+        ไฟล์นำเข้าต้องมีหัวคอลัมน์: ชื่อลูกค้า, เบอร์โทร, ประเภทลูกค้า (ลูกค้าทั่วไป/ลูกค้าขายส่ง), วงเงินเชื่อ, หมายเหตุ —
+        ลูกค้าที่เบอร์โทรตรงกับที่มีอยู่แล้วในระบบจะถูกอัปเดตข้อมูลแทนการเพิ่มซ้ำ
+      </p>
+
+      {importMsg && <p className="mb-4 text-sm text-gray-600">{importMsg}</p>}
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
       {showAdd && (

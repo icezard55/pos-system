@@ -404,6 +404,7 @@ export interface ShopSettings {
   baht_per_point: number;
   show_vat_on_receipt: boolean;
   promptpay_id: string | null;
+  contact_email: string | null;
   updated_at: string;
 }
 

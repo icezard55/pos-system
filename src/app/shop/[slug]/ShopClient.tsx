@@ -39,12 +39,14 @@ export default function ShopClient({
   products,
   shopName,
   promotions = [],
+  contactEmail = null,
 }: {
   shopId: string;
   shopSlug: string;
   products: StorefrontProduct[];
   shopName: string;
   promotions?: ActivePromotion[];
+  contactEmail?: string | null;
 }) {
   const supabase = createClient();
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -592,9 +594,19 @@ export default function ShopClient({
 
   return (
     <div>
-      <div className="mb-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 p-5 text-white">
-        <h1 className="text-xl font-bold">{shopName}</h1>
-        <p className="mt-1 text-sm text-indigo-100">เลือกซื้อสินค้าและสั่งซื้อออนไลน์ได้ทันที</p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 p-5 text-white">
+        <div>
+          <h1 className="text-xl font-bold">{shopName}</h1>
+          <p className="mt-1 text-sm text-indigo-100">เลือกซื้อสินค้าและสั่งซื้อออนไลน์ได้ทันที</p>
+        </div>
+        {contactEmail && (
+          <a
+            href={`mailto:${contactEmail}?subject=${encodeURIComponent(`สอบถามสินค้า - ${shopName}`)}&body=${encodeURIComponent("สวัสดีครับ/ค่ะ ผม/ดิฉันสนใจสอบถามเกี่ยวกับสินค้าในร้าน\n\n")}`}
+            className="shrink-0 rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white hover:bg-white/25"
+          >
+            ✉️ ติดต่อผู้ขาย
+          </a>
+        )}
       </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2">

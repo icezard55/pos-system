@@ -29,6 +29,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
     .eq("shop_id", shopId)
     .maybeSingle();
   const { data: promotions } = await supabase.rpc("get_active_promotions", { p_shop_id: shopId });
+  const { data: contactEmail } = await supabase.rpc("get_storefront_contact", { p_shop_id: shopId });
 
   return (
     <ShopClient
@@ -37,6 +38,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
       products={(products as StorefrontProduct[]) ?? []}
       shopName={shopSettings?.shop_name ?? shop.name ?? "ร้านค้าออนไลน์"}
       promotions={promotions ?? []}
+      contactEmail={(contactEmail as string | null) ?? null}
     />
   );
 }

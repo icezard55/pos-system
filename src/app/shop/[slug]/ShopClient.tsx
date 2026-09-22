@@ -618,7 +618,7 @@ export default function ShopClient({
         </select>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 pb-24 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2.5 pb-24 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {groupedProducts.map((item) => {
           if (item.type === "single") {
             const p = item.product;
@@ -626,33 +626,43 @@ export default function ShopClient({
             const outOfStock = !p.no_stock_tracking && Number(p.stock_qty) <= 0;
             const promo = promoMap.get(p.id);
             return (
-              <div key={p.id} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm">
+              <div key={p.id} className="group flex flex-col overflow-hidden rounded-md border border-gray-200 bg-white transition-shadow hover:shadow-md">
                 <div
-                  className="flex aspect-square items-center justify-center bg-gray-100"
+                  className="relative flex aspect-square items-center justify-center overflow-hidden bg-gray-100"
                   style={!p.image_url && p.card_color ? { backgroundColor: p.card_color } : undefined}
                 >
                   {p.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" />
+                    <img src={p.image_url} alt={p.name} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" />
                   ) : p.card_color ? null : (
                     <span className="text-3xl text-gray-300">📦</span>
                   )}
-                </div>
-                <div className="flex flex-1 flex-col p-2.5">
-                  <p className="line-clamp-2 min-h-[2.4em] text-xs font-medium text-gray-800">{p.name}</p>
                   {promo && (
-                    <p className="mt-0.5 text-[10px] font-medium text-pink-600">🎁 {promotionBadgeText(promo)}</p>
+                    <span className="absolute left-0 top-0 rounded-br-md bg-[#ee4d2d] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                      🎁 โปร
+                    </span>
                   )}
-                  <p className="mt-1 text-sm font-bold text-indigo-700">{money(p.sell_price)} บาท</p>
-                  <p className="text-[10px] text-gray-400">
-                    {p.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `คงเหลือ ${p.stock_qty} ${p.unit}`}
+                  {outOfStock && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                      <span className="rounded bg-black/70 px-2 py-1 text-[11px] font-semibold text-white">สินค้าหมด</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-1 flex-col p-2">
+                  <p className="line-clamp-2 min-h-[2.4em] text-xs text-gray-800">{p.name}</p>
+                  {promo && (
+                    <p className="mt-0.5 truncate text-[10px] font-medium text-[#ee4d2d]">🎁 {promotionBadgeText(promo)}</p>
+                  )}
+                  <p className="mt-1 text-base font-medium text-[#ee4d2d]">฿{money(p.sell_price)}</p>
+                  <p className="text-[11px] text-gray-400">
+                    {p.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `เหลือ ${p.stock_qty} ${p.unit}`}
                   </p>
                   <button
                     onClick={() => addToCart(p)}
                     disabled={outOfStock || (inCart && !p.no_stock_tracking ? inCart.qty >= Number(p.stock_qty) : false)}
-                    className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
+                    className="mt-2 w-full rounded-sm bg-[#ee4d2d] py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#d73211] disabled:bg-gray-300"
                   >
-                    {inCart ? `ในตะกร้า (${inCart.qty})` : "เพิ่มลงตะกร้า"}
+                    {inCart ? `ในตะกร้า (${inCart.qty})` : "หยิบใส่ตะกร้า"}
                   </button>
                 </div>
               </div>
@@ -667,30 +677,35 @@ export default function ShopClient({
           const totalStock = variants.reduce((s, v) => s + Number(v.stock_qty), 0);
           const anyAlwaysAvailable = variants.some((v) => v.no_stock_tracking);
           return (
-            <div key={`group-${groupName}`} className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm">
+            <div key={`group-${groupName}`} className="group flex flex-col overflow-hidden rounded-md border border-gray-200 bg-white transition-shadow hover:shadow-md">
               <div
-                className="flex aspect-square items-center justify-center bg-gray-100"
+                className="relative flex aspect-square items-center justify-center overflow-hidden bg-gray-100"
                 style={!first.image_url && first.card_color ? { backgroundColor: first.card_color } : undefined}
               >
                 {first.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={first.image_url} alt={groupName} className="h-full w-full object-cover" />
+                  <img src={first.image_url} alt={groupName} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" />
                 ) : first.card_color ? null : (
                   <span className="text-3xl text-gray-300">📦</span>
                 )}
+                {totalStock <= 0 && !anyAlwaysAvailable && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                    <span className="rounded bg-black/70 px-2 py-1 text-[11px] font-semibold text-white">สินค้าหมด</span>
+                  </div>
+                )}
               </div>
-              <div className="flex flex-1 flex-col p-2.5">
-                <p className="line-clamp-2 min-h-[2.4em] text-xs font-medium text-gray-800">{groupName}</p>
-                <p className="mt-1 text-sm font-bold text-indigo-700">
-                  {minPrice === maxPrice ? `${money(minPrice)} บาท` : `${money(minPrice)} - ${money(maxPrice)} บาท`}
+              <div className="flex flex-1 flex-col p-2">
+                <p className="line-clamp-2 min-h-[2.4em] text-xs text-gray-800">{groupName}</p>
+                <p className="mt-1 text-base font-medium text-[#ee4d2d]">
+                  {minPrice === maxPrice ? `฿${money(minPrice)}` : `฿${money(minPrice)} - ฿${money(maxPrice)}`}
                 </p>
-                <p className="text-[10px] text-gray-400">
-                  {totalStock <= 0 && !anyAlwaysAvailable ? "สินค้าหมด" : `${variants.length} ตัวเลือก · คงเหลือรวม ${totalStock}`}
+                <p className="text-[11px] text-gray-400">
+                  {totalStock <= 0 && !anyAlwaysAvailable ? "สินค้าหมด" : `${variants.length} ตัวเลือก · เหลือรวม ${totalStock}`}
                 </p>
                 <button
                   onClick={() => setVariantPopupGroup(groupName)}
                   disabled={!anyAlwaysAvailable && totalStock <= 0}
-                  className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
+                  className="mt-2 w-full rounded-sm bg-[#ee4d2d] py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#d73211] disabled:bg-gray-300"
                 >
                   เลือกตัวเลือก
                 </button>
@@ -722,9 +737,9 @@ export default function ShopClient({
                 const inCart = cart.find((c) => c.product_id === v.id);
                 const outOfStock = !v.no_stock_tracking && Number(v.stock_qty) <= 0;
                 return (
-                  <div key={v.id} className="flex flex-col overflow-hidden rounded-xl border">
+                  <div key={v.id} className="flex flex-col overflow-hidden rounded-md border border-gray-200">
                     <div
-                      className="flex aspect-square items-center justify-center bg-gray-100"
+                      className="relative flex aspect-square items-center justify-center overflow-hidden bg-gray-100"
                       style={!v.image_url && v.card_color ? { backgroundColor: v.card_color } : undefined}
                     >
                       {v.image_url ? (
@@ -733,19 +748,24 @@ export default function ShopClient({
                       ) : v.card_color ? null : (
                         <span className="text-2xl text-gray-300">📦</span>
                       )}
+                      {outOfStock && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                          <span className="rounded bg-black/70 px-2 py-1 text-[11px] font-semibold text-white">สินค้าหมด</span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-1 flex-col p-2">
-                      <p className="text-xs font-medium text-gray-800">{v.variant_label || v.name}</p>
-                      <p className="mt-1 text-sm font-bold text-indigo-700">{money(v.sell_price)} บาท</p>
-                      <p className="text-[10px] text-gray-400">
-                        {v.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `คงเหลือ ${v.stock_qty} ${v.unit}`}
+                      <p className="text-xs text-gray-800">{v.variant_label || v.name}</p>
+                      <p className="mt-1 text-base font-medium text-[#ee4d2d]">฿{money(v.sell_price)}</p>
+                      <p className="text-[11px] text-gray-400">
+                        {v.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `เหลือ ${v.stock_qty} ${v.unit}`}
                       </p>
                       <button
                         onClick={() => addToCart(v)}
                         disabled={outOfStock || (inCart && !v.no_stock_tracking ? inCart.qty >= Number(v.stock_qty) : false)}
-                        className="mt-2 w-full rounded-lg bg-indigo-600 py-1.5 text-xs font-medium text-white disabled:bg-gray-300"
+                        className="mt-2 w-full rounded-sm bg-[#ee4d2d] py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#d73211] disabled:bg-gray-300"
                       >
-                        {inCart ? `ในตะกร้า (${inCart.qty})` : "เพิ่มลงตะกร้า"}
+                        {inCart ? `ในตะกร้า (${inCart.qty})` : "หยิบใส่ตะกร้า"}
                       </button>
                     </div>
                   </div>

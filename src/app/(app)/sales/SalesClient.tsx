@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -107,6 +107,16 @@ function findProductBySkuId(
   const productId = skuMap.get(platformSkuId);
   if (!productId) return null;
   return productList.find((p) => p.id === productId) ?? null;
+}
+
+function saleDateGroupLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(today) - startOfDay(d)) / 86400000);
+  if (diffDays === 0) return `วันนี้ (${d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })})`;
+  if (diffDays === 1) return `เมื่อวาน (${d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })})`;
+  return d.toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric", weekday: "short" });
 }
 
 export default function SalesClient({
@@ -905,10 +915,23 @@ export default function SalesClient({
             </tr>
           </thead>
           <tbody>
-            {filtered.map((s) => {
-              const isVoid = s.status === "void";
-              return (
-                <tr key={s.id} className={`border-b last:border-0 hover:bg-gray-50 ${isVoid ? "opacity-50" : ""}`}>
+            {(() => {
+              let lastGroup: string | null = null;
+              return filtered.map((s) => {
+                const isVoid = s.status === "void";
+                const group = saleDateGroupLabel(s.created_at);
+                const showGroupHeader = group !== lastGroup;
+                lastGroup = group;
+                return (
+                  <Fragment key={s.id}>
+                    {showGroupHeader && (
+                      <tr key={`group-${s.id}`} className="bg-gray-100">
+                        <td colSpan={7} className="px-4 py-2 text-xs font-semibold text-gray-500">
+                          {group}
+                        </td>
+                      </tr>
+                    )}
+                    <tr key={s.id} className={`border-b last:border-0 hover:bg-gray-50 ${isVoid ? "opacity-50" : ""}`}>
                   <td className="px-4 py-3 font-medium">
                     {s.sale_no}
                     {s.source === "imported" && (
@@ -981,8 +1004,10 @@ export default function SalesClient({
                     </div>
                   </td>
                 </tr>
-              );
-            })}
+                  </Fragment>
+                );
+              });
+            })()}
             {filtered.length === 0 && (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">ไม่มีรายการขาย</td></tr>
             )}

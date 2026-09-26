@@ -131,6 +131,7 @@ export interface Sale {
   discount_code: string | null;
   discount_code_amount: number;
   void_type: VoidType | null;
+  tracking_number: string | null;
 }
 
 export type VoidType = "cancelled" | "returned";

@@ -93,6 +93,16 @@ interface UnresolvedSkuItem {
   qty: number;
 }
 
+interface PhotoAiResult {
+  result_type: "returned" | "cancelled" | "unclear";
+  courier: string | null;
+  order_no: string | null;
+  tracking_number: string | null;
+  phone: string | null;
+  confidence: "high" | "medium" | "low";
+  raw_text_found: string | null;
+}
+
 // นำเข้าออเดอร์จากแพลตฟอร์ม: จับคู่สินค้าด้วย "SKU ID" ของแพลตฟอร์ม (เช่น TikTok Shop) เท่านั้น —
 // เป็นรหัสประจำตัวสินค้าแต่ละแบบ/แต่ละไซซ์ที่แพลตฟอร์มกำหนดคงที่ตลอด ไม่เปลี่ยนแม้แก้ชื่อสินค้าทีหลัง
 // จึงแม่นยำกว่าการเทียบชื่อ/ตัวเลือกสินค้าแบบข้อความ หาก SKU ID ในไฟล์ยังไม่เคยจับคู่กับสินค้าใดในระบบ
@@ -176,6 +186,16 @@ export default function SalesClient({
     feePct: string;
   } | null>(null);
 
+  // แจ้งตีกลับ/ยกเลิกด้วยรูปภาพ (อ่านด้วย AI) — ใช้ปุ่มเดียวกันทั้งสองกรณี ให้ AI แยกแยะประเภทเอง
+  const photoFileRef = useRef<HTMLInputElement>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoAiResult, setPhotoAiResult] = useState<PhotoAiResult | null>(null);
+  const [photoCandidates, setPhotoCandidates] = useState<Sale[]>([]);
+  const [photoSelectedSaleId, setPhotoSelectedSaleId] = useState<string | null>(null);
+  const [photoVoidType, setPhotoVoidType] = useState<VoidType>("returned");
+  const [applyingPhotoMatch, setApplyingPhotoMatch] = useState(false);
+
   const filtered = sales.filter(
     (s) =>
       (s.sale_no.toLowerCase().includes(search.toLowerCase()) || (s.customer_name ?? "").toLowerCase().includes(search.toLowerCase())) &&
@@ -221,6 +241,100 @@ export default function SalesClient({
       router.refresh();
     } catch (err: any) {
       setError(err.message ?? "อัปเดตสถานะรับเงินไม่สำเร็จ");
+    }
+  }
+
+  function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("อ่านไฟล์รูปไม่สำเร็จ"));
+      reader.onload = () => {
+        const result = reader.result as string;
+        const comma = result.indexOf(",");
+        resolve({ base64: result.slice(comma + 1), mediaType: file.type });
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function searchSalesByPhotoResult(ai: PhotoAiResult): Promise<Sale[]> {
+    const orClauses: string[] = [];
+    if (ai.order_no) orClauses.push(`customer_name.eq.${ai.order_no}`);
+    if (ai.tracking_number) orClauses.push(`tracking_number.eq.${ai.tracking_number}`);
+    if (orClauses.length === 0) return [];
+    const { data, error } = await supabase
+      .from("sales")
+      .select("*")
+      .neq("status", "void")
+      .or(orClauses.join(","))
+      .order("created_at", { ascending: false })
+      .limit(5);
+    if (error) throw error;
+    return (data ?? []) as Sale[];
+  }
+
+  function resetPhotoMatchState() {
+    setPhotoAiResult(null);
+    setPhotoCandidates([]);
+    setPhotoSelectedSaleId(null);
+    setPhotoError(null);
+    if (photoFileRef.current) photoFileRef.current.value = "";
+  }
+
+  async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true);
+    setPhotoError(null);
+    setPhotoAiResult(null);
+    setPhotoCandidates([]);
+    setPhotoSelectedSaleId(null);
+    try {
+      const { base64, mediaType } = await fileToBase64(file);
+      const res = await fetch("/api/ai/read-return-photo", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64, mediaType }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "อ่านรูปไม่สำเร็จ");
+      const ai: PhotoAiResult = json.result;
+      setPhotoAiResult(ai);
+      setPhotoVoidType(ai.result_type === "cancelled" ? "cancelled" : "returned");
+
+      const candidates = await searchSalesByPhotoResult(ai);
+      setPhotoCandidates(candidates);
+      setPhotoSelectedSaleId(candidates[0]?.id ?? null);
+    } catch (err: any) {
+      setPhotoError(err.message ?? "อ่านรูปไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setPhotoUploading(false);
+      if (photoFileRef.current) photoFileRef.current.value = "";
+    }
+  }
+
+  async function handleConfirmPhotoMatch() {
+    if (!photoSelectedSaleId || !photoAiResult) return;
+    const sale = photoCandidates.find((c) => c.id === photoSelectedSaleId);
+    if (!sale) return;
+    setApplyingPhotoMatch(true);
+    setPhotoError(null);
+    try {
+      if (photoAiResult.tracking_number && sale.tracking_number !== photoAiResult.tracking_number) {
+        const { error: trackErr } = await supabase.rpc("set_sale_tracking_number", {
+          p_sale_id: sale.id,
+          p_tracking_number: photoAiResult.tracking_number,
+        });
+        if (trackErr) throw trackErr;
+      }
+      const { error: voidErr } = await supabase.rpc("void_sale", { p_sale_id: sale.id, p_void_type: photoVoidType });
+      if (voidErr) throw voidErr;
+      resetPhotoMatchState();
+      router.refresh();
+    } catch (err: any) {
+      setPhotoError(err.message ?? "อัปเดตสถานะบิลไม่สำเร็จ");
+    } finally {
+      setApplyingPhotoMatch(false);
     }
   }
 
@@ -708,6 +822,28 @@ export default function SalesClient({
         </div>
       )}
 
+      {isAdmin && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-4 shadow-sm">
+          <span className="text-sm font-medium text-gray-700">แจ้งตีกลับ/ยกเลิกด้วยรูปภาพ:</span>
+          <label className="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
+            {photoUploading ? "กำลังอ่านรูป..." : "📸 ถ่าย/อัปโหลดรูปพัสดุ"}
+            <input
+              ref={photoFileRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoUpload}
+              disabled={photoUploading}
+              className="hidden"
+            />
+          </label>
+          <span className="text-xs text-gray-400">
+            ถ่ายรูปป้ายพัสดุตีกลับ หรือหน้าจอออเดอร์ที่ลูกค้ายกเลิก — AI จะอ่านและค้นหาบิลที่ตรงกันให้ยืนยันก่อนเปลี่ยนสถานะ
+          </span>
+          {photoError && !photoAiResult && <p className="w-full text-xs text-red-600">{photoError}</p>}
+        </div>
+      )}
+
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
       {unresolvedSkuItems.length > 0 && (
@@ -764,6 +900,105 @@ export default function SalesClient({
                 className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60"
               >
                 {resolvingImport ? "กำลังนำเข้า..." : "ยืนยันการจับคู่และนำเข้าต่อ"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {photoAiResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="mb-1 text-base font-semibold text-gray-800">ผลการอ่านรูปด้วย AI</h3>
+            <p className="mb-3 text-xs text-gray-500">ตรวจสอบข้อมูลที่อ่านได้ และเลือกบิลที่ตรงกันก่อนยืนยันเปลี่ยนสถานะ (ไม่สามารถย้อนกลับได้)</p>
+
+            <div className="mb-3 space-y-1 rounded-lg bg-gray-50 p-3 text-xs text-gray-700">
+              <p>
+                ประเภทที่ AI คาดว่าใช่:{" "}
+                <span className="font-semibold text-gray-900">
+                  {photoAiResult.result_type === "returned" ? "ตีกลับ" : photoAiResult.result_type === "cancelled" ? "ยกเลิก" : "ไม่ชัดเจน"}
+                </span>{" "}
+                (ความมั่นใจ: {photoAiResult.confidence === "high" ? "สูง" : photoAiResult.confidence === "medium" ? "ปานกลาง" : "ต่ำ"})
+              </p>
+              {photoAiResult.courier && <p>ขนส่ง: {photoAiResult.courier}</p>}
+              {photoAiResult.order_no && <p>เลข Order ID: {photoAiResult.order_no}</p>}
+              {photoAiResult.tracking_number && <p>เลขพัสดุ: {photoAiResult.tracking_number}</p>}
+              {photoAiResult.phone && <p>เบอร์โทร: {photoAiResult.phone}</p>}
+              {photoAiResult.raw_text_found && <p className="text-gray-500">ข้อความที่อ่านได้: {photoAiResult.raw_text_found}</p>}
+            </div>
+
+            {photoCandidates.length === 0 ? (
+              <p className="mb-4 rounded-lg bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                ไม่พบบิลที่ตรงกับข้อมูลในรูป กรุณาตรวจสอบด้วยตนเองในตารางประวัติการขาย
+              </p>
+            ) : (
+              <div className="mb-3 max-h-56 space-y-2 overflow-y-auto">
+                {photoCandidates.map((c) => (
+                  <label
+                    key={c.id}
+                    className={`block cursor-pointer rounded-lg border p-2 text-sm ${
+                      photoSelectedSaleId === c.id ? "border-brand bg-brand/5" : "border-gray-200"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="photoSaleMatch"
+                      className="mr-2"
+                      checked={photoSelectedSaleId === c.id}
+                      onChange={() => setPhotoSelectedSaleId(c.id)}
+                    />
+                    บิล {c.sale_no} · {c.customer_name ?? "-"} · ฿{Number(c.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })} ·{" "}
+                    {new Date(c.created_at).toLocaleDateString("th-TH")}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {photoCandidates.length > 0 && (
+              <>
+                <label className="mb-1 block text-xs text-gray-600">ประเภทการเปลี่ยนสถานะ</label>
+                <div className="mb-3 flex gap-2">
+                  {(["cancelled", "returned"] as VoidType[]).map((t) => (
+                    <label
+                      key={t}
+                      className={`flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm ${
+                        photoVoidType === t ? "border-red-600 bg-red-50 text-red-700" : "text-gray-600"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="photoVoidType"
+                        checked={photoVoidType === t}
+                        onChange={() => setPhotoVoidType(t)}
+                        className="sr-only"
+                      />
+                      {VOID_TYPE_LABEL[t]}
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {photoError && <p className="mb-3 text-sm text-red-600">{photoError}</p>}
+
+            <div className="flex gap-2">
+              {photoCandidates.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleConfirmPhotoMatch}
+                  disabled={applyingPhotoMatch || !photoSelectedSaleId}
+                  className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                >
+                  {applyingPhotoMatch ? "กำลังบันทึก..." : `ยืนยัน${VOID_TYPE_LABEL[photoVoidType]}บิลนี้`}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={resetPhotoMatchState}
+                disabled={applyingPhotoMatch}
+                className="flex-1 rounded-lg border py-2 text-sm hover:bg-gray-50"
+              >
+                ปิด
               </button>
             </div>
           </div>

@@ -42,6 +42,7 @@ const ORDER_HEADER_MAP: Record<string, string> = {
   "sku subtotal after discount": "subtotal_after_discount",
   "sku id": "platform_sku_id",
   "tracking id": "tracking_number", "tracking number": "tracking_number", "เลขพัสดุ": "tracking_number", "เลขพัสดุขนส่ง": "tracking_number",
+  "*หมายเลขติดตามพัสดุ": "tracking_number", "หมายเลขติดตามพัสดุ": "tracking_number",
 };
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {

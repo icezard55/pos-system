@@ -41,6 +41,7 @@ const ORDER_HEADER_MAP: Record<string, string> = {
   "sku unit original price": "unit_price",
   "sku subtotal after discount": "subtotal_after_discount",
   "sku id": "platform_sku_id",
+  "tracking id": "tracking_number", "tracking number": "tracking_number", "เลขพัสดุ": "tracking_number", "เลขพัสดุขนส่ง": "tracking_number",
 };
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
@@ -77,6 +78,7 @@ interface PlatformOrderItem {
 }
 interface PlatformOrderGroup {
   order_no: string;
+  tracking_number: string;
   items: PlatformOrderItem[];
 }
 interface CatalogProduct {
@@ -559,7 +561,7 @@ export default function SalesClient({
         }
         orderTotal = Math.round(orderTotal * 100) / 100;
 
-        const { error: rpcError } = await supabase.rpc("create_sale", {
+        const { data: saleRows, error: rpcError } = await supabase.rpc("create_sale", {
           p_items: items,
           p_payments: [{ method: "transfer", amount: orderTotal }],
           p_bill_discount: 0,
@@ -572,6 +574,10 @@ export default function SalesClient({
           p_platform_fee_pct: Number(feePct) > 0 ? Number(feePct) : null,
         });
         if (rpcError) throw rpcError;
+        const newSaleId = saleRows?.[0]?.sale_id as string | undefined;
+        if (newSaleId && g.tracking_number) {
+          await supabase.rpc("set_sale_tracking_number", { p_sale_id: newSaleId, p_tracking_number: g.tracking_number });
+        }
         successCount++;
       } catch (err: any) {
         errors.push(`${g.order_no || "(ไม่ระบุเลขออเดอร์)"}: ${err.message ?? err}`);
@@ -634,8 +640,11 @@ export default function SalesClient({
       let anonCounter = 0;
       rows.forEach((r) => {
         const orderNo = String(r.order_no ?? "").trim() || `__anon_${anonCounter++}`;
-        if (!groups.has(orderNo)) groups.set(orderNo, { order_no: String(r.order_no ?? "").trim(), items: [] });
-        groups.get(orderNo)!.items.push({
+        if (!groups.has(orderNo)) groups.set(orderNo, { order_no: String(r.order_no ?? "").trim(), tracking_number: "", items: [] });
+        const group = groups.get(orderNo)!;
+        const rowTracking = String(r.tracking_number ?? "").trim();
+        if (rowTracking && !group.tracking_number) group.tracking_number = rowTracking;
+        group.items.push({
           sku: String(r.sku ?? "").trim(),
           product_name: String(r.product_name ?? "").trim(),
           variation: String(r.variation ?? "").trim(),
@@ -816,7 +825,8 @@ export default function SalesClient({
             รองรับไฟล์ออเดอร์จากแพลตฟอร์มที่มีคอลัมน์ เลขออเดอร์, วันที่, สินค้า, จำนวน, ราคาต่อหน่วย, SKU ID —
             จับคู่สินค้าด้วย "SKU ID" ของแพลตฟอร์มเท่านั้น (แม่นยำกว่าจับคู่ด้วยชื่อ) ถ้าเจอ SKU ID ที่ยังไม่เคยจับคู่
             ระบบจะให้เลือกสินค้าที่ตรงกันก่อน 1 ครั้ง แล้วจดจำไว้ใช้อัตโนมัติในครั้งต่อไป ตัดสต๊อกจริงและตั้งสถานะเป็น
-            "รอรับเงิน" ให้อัตโนมัติ (ยืนยันรับเงินได้ในตารางด้านล่างเมื่อแพลตฟอร์มโอนเงินมาแล้ว)
+            "รอรับเงิน" ให้อัตโนมัติ (ยืนยันรับเงินได้ในตารางด้านล่างเมื่อแพลตฟอร์มโอนเงินมาแล้ว) — ถ้าไฟล์มีคอลัมน์
+            "Tracking ID"/เลขพัสดุ ระบบจะบันทึกเลขพัสดุไว้กับบิลด้วย เพื่อให้ฟีเจอร์ถ่ายรูปแจ้งตีกลับด้านบนจับคู่บิลได้
           </p>
           {orderImportMsg && <p className="text-xs text-blue-700">{orderImportMsg}</p>}
         </div>

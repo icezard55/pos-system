@@ -282,16 +282,44 @@ export default function SalesClient({
     }
   }
 
-  function fileToBase64(file: File): Promise<{ base64: string; mediaType: string }> {
+  // ย่อรูปให้เล็กลงก่อนส่งให้ AI อ่าน — รูปถ่ายจากกล้องมือถือมักมีขนาดหลาย MB ซึ่งอัปโหลด/ประมวลผลช้า
+  // บนเน็ตมือถือ (บางครั้งค้างจนดูเหมือนปุ่มกดไม่ติด) ย่อเหลือด้านยาวสุด 1600px + บีบอัดเป็น JPEG ก็อ่านตัวอักษร
+  // บนป้ายพัสดุได้เพียงพอแล้ว และเร็วขึ้นมาก
+  function resizeImageToBase64(file: File, maxDim = 1600, quality = 0.82): Promise<{ base64: string; mediaType: string }> {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error("อ่านไฟล์รูปไม่สำเร็จ"));
-      reader.onload = () => {
-        const result = reader.result as string;
-        const comma = result.indexOf(",");
-        resolve({ base64: result.slice(comma + 1), mediaType: file.type });
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        try {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            if (width >= height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("ย่อรูปไม่สำเร็จ");
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL("image/jpeg", quality);
+          const comma = dataUrl.indexOf(",");
+          resolve({ base64: dataUrl.slice(comma + 1), mediaType: "image/jpeg" });
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error("ย่อรูปไม่สำเร็จ"));
+        }
       };
-      reader.readAsDataURL(file);
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("อ่านไฟล์รูปไม่สำเร็จ"));
+      };
+      img.src = objectUrl;
     });
   }
 
@@ -420,12 +448,16 @@ export default function SalesClient({
     setPhotoAiResult(null);
     setPhotoCandidates([]);
     setPhotoSelectedSaleId(null);
+    const timeoutMs = 45000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const { base64, mediaType } = await fileToBase64(file);
+      const { base64, mediaType } = await resizeImageToBase64(file);
       const res = await fetch("/api/ai/read-return-photo", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ imageBase64: base64, mediaType }),
+        signal: controller.signal,
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "อ่านรูปไม่สำเร็จ");
@@ -447,8 +479,9 @@ export default function SalesClient({
         setPhotoSelectedSaleId(candidates[0]?.id ?? null);
       }
     } catch (err: any) {
-      setPhotoError(err.message ?? "อ่านรูปไม่สำเร็จ กรุณาลองใหม่");
+      setPhotoError(err.name === "AbortError" ? "อ่านรูปนานเกินไป (เครือข่ายช้าหรือ AI ไม่ตอบสนอง) กรุณาลองใหม่อีกครั้ง" : err.message ?? "อ่านรูปไม่สำเร็จ กรุณาลองใหม่");
     } finally {
+      clearTimeout(timeoutId);
       setPhotoUploading(false);
       if (photoFileRef.current) photoFileRef.current.value = "";
     }

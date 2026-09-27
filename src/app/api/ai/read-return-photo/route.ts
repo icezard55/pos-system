@@ -58,34 +58,48 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "รองรับเฉพาะไฟล์รูปภาพ JPEG/PNG/WEBP/GIF" }, { status: 400 });
     }
 
-    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 1024,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: mediaType, data: imageBase64 },
-              },
-              {
-                type: "text",
-                text: "อ่านรูปนี้แล้วตอบกลับเป็น JSON ตาม schema ที่กำหนด",
-              },
-            ],
-          },
-        ],
-      }),
-    });
+    // กันไม่ให้ค้างตลอดกาลถ้า Anthropic ตอบช้า/ไม่ตอบ — ยกเลิกเองที่ 35 วินาที (สั้นกว่า timeout ฝั่ง client ที่ 45 วิ)
+    const upstreamController = new AbortController();
+    const upstreamTimeout = setTimeout(() => upstreamController.abort(), 35000);
+    let anthropicRes: Response;
+    try {
+      anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-5",
+          max_tokens: 1024,
+          system: SYSTEM_PROMPT,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: mediaType, data: imageBase64 },
+                },
+                {
+                  type: "text",
+                  text: "อ่านรูปนี้แล้วตอบกลับเป็น JSON ตาม schema ที่กำหนด",
+                },
+              ],
+            },
+          ],
+        }),
+        signal: upstreamController.signal,
+      });
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        return NextResponse.json({ error: "เรียก AI นานเกินไป กรุณาลองใหม่" }, { status: 504 });
+      }
+      throw err;
+    } finally {
+      clearTimeout(upstreamTimeout);
+    }
 
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();

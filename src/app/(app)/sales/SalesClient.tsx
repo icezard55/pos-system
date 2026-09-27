@@ -544,8 +544,31 @@ export default function SalesClient({
     let successCount = 0;
     const errors: string[] = [];
     const priceMismatches: string[] = [];
+    const skippedDuplicates: string[] = [];
+
+    // กันนำเข้าออเดอร์ซ้ำ — เช็คว่าเลขออเดอร์ (เก็บไว้ใน customer_name) ของช่องทางนี้
+    // มีอยู่ในระบบแล้วหรือยัง (ไม่ว่าบิลนั้นจะถูกยกเลิกไปแล้วหรือไม่ก็ตาม) ถ้ามีแล้วจะข้ามไปเลย
+    const orderNosToCheck = Array.from(groups.values())
+      .map((g) => g.order_no)
+      .filter((no) => no.trim());
+    const existingOrderNos = new Set<string>();
+    if (orderNosToCheck.length > 0) {
+      const { data: existingRows, error: existErr } = await supabase
+        .from("sales")
+        .select("customer_name")
+        .eq("channel", channel)
+        .in("customer_name", orderNosToCheck);
+      if (existErr) throw existErr;
+      for (const row of existingRows ?? []) {
+        if (row.customer_name) existingOrderNos.add(row.customer_name);
+      }
+    }
 
     for (const g of groups.values()) {
+      if (g.order_no && existingOrderNos.has(g.order_no)) {
+        skippedDuplicates.push(g.order_no);
+        continue;
+      }
       try {
         const items: { product_id: string; qty: number; discount: number }[] = [];
         let orderTotal = 0;
@@ -606,6 +629,9 @@ export default function SalesClient({
 
     setOrderImportMsg(
       `บันทึกสำเร็จ ${successCount} ออเดอร์ จากทั้งหมด ${groups.size} ออเดอร์ (ตัดสต๊อกแล้ว สถานะรอรับเงิน)` +
+        (skippedDuplicates.length > 0
+          ? ` — ข้ามออเดอร์ซ้ำที่มีในระบบแล้ว ${skippedDuplicates.length} รายการ: ${skippedDuplicates.slice(0, 10).join(", ")}${skippedDuplicates.length > 10 ? " ..." : ""}`
+          : "") +
         (errors.length > 0 ? ` — ล้มเหลว ${errors.length}: ${errors.join(" | ")}` : "") +
         (priceMismatches.length > 0 ? ` ⚠ ราคาต่างจากระบบ: ${priceMismatches.join(", ")}` : "")
     );

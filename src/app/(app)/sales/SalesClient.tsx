@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
@@ -113,6 +113,18 @@ interface PhotoAiResult {
   raw_text_found: string | null;
 }
 
+interface UnmatchedReturnPhoto {
+  id: string;
+  result_type: string | null;
+  courier: string | null;
+  order_no: string | null;
+  tracking_number: string | null;
+  phone: string | null;
+  raw_text_found: string | null;
+  confidence: string | null;
+  created_at: string;
+}
+
 // นำเข้าออเดอร์จากแพลตฟอร์ม: จับคู่สินค้าด้วย "SKU ID" ของแพลตฟอร์ม (เช่น TikTok Shop) เท่านั้น —
 // เป็นรหัสประจำตัวสินค้าแต่ละแบบ/แต่ละไซซ์ที่แพลตฟอร์มกำหนดคงที่ตลอด ไม่เปลี่ยนแม้แก้ชื่อสินค้าทีหลัง
 // จึงแม่นยำกว่าการเทียบชื่อ/ตัวเลือกสินค้าแบบข้อความ หาก SKU ID ในไฟล์ยังไม่เคยจับคู่กับสินค้าใดในระบบ
@@ -213,6 +225,14 @@ export default function SalesClient({
   const [photoSelectedSaleId, setPhotoSelectedSaleId] = useState<string | null>(null);
   const [photoVoidType, setPhotoVoidType] = useState<VoidType>("returned");
   const [applyingPhotoMatch, setApplyingPhotoMatch] = useState(false);
+  const [photoManualSearchTerm, setPhotoManualSearchTerm] = useState("");
+  const [photoManualSearching, setPhotoManualSearching] = useState(false);
+  const [photoResolvingRecordId, setPhotoResolvingRecordId] = useState<string | null>(null);
+  const [savingUnmatched, setSavingUnmatched] = useState(false);
+
+  // รายการถ่ายรูปตีกลับ/ยกเลิกที่ AI หาบิลไม่เจอ ค้างไว้ให้กลับมาค้นหาด้วยมือทีหลัง
+  const [unmatchedList, setUnmatchedList] = useState<UnmatchedReturnPhoto[]>([]);
+  const [unmatchedOpen, setUnmatchedOpen] = useState(false);
 
   const filtered = sales.filter(
     (s) =>
@@ -296,7 +316,98 @@ export default function SalesClient({
     setPhotoCandidates([]);
     setPhotoSelectedSaleId(null);
     setPhotoError(null);
+    setPhotoManualSearchTerm("");
+    setPhotoResolvingRecordId(null);
     if (photoFileRef.current) photoFileRef.current.value = "";
+  }
+
+  async function loadUnmatchedList() {
+    const { data, error } = await supabase
+      .from("return_photo_unmatched")
+      .select("id, result_type, courier, order_no, tracking_number, phone, raw_text_found, confidence, created_at")
+      .eq("resolved", false)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (!error) setUnmatchedList((data ?? []) as UnmatchedReturnPhoto[]);
+  }
+
+  useEffect(() => {
+    if (isAdmin) loadUnmatchedList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
+  async function handlePhotoManualSearch() {
+    const term = photoManualSearchTerm.trim();
+    if (!term) return;
+    setPhotoManualSearching(true);
+    setPhotoError(null);
+    try {
+      const { data, error } = await supabase
+        .from("sales")
+        .select("*")
+        .neq("status", "void")
+        .or(`sale_no.ilike.%${term}%,customer_name.ilike.%${term}%,tracking_number.ilike.%${term}%`)
+        .order("created_at", { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      setPhotoCandidates((data ?? []) as Sale[]);
+      setPhotoSelectedSaleId((data ?? [])[0]?.id ?? null);
+    } catch (err: any) {
+      setPhotoError(err.message ?? "ค้นหาไม่สำเร็จ");
+    } finally {
+      setPhotoManualSearching(false);
+    }
+  }
+
+  async function handleSaveUnmatched() {
+    if (!photoAiResult) return;
+    setSavingUnmatched(true);
+    setPhotoError(null);
+    try {
+      const { error } = await supabase.from("return_photo_unmatched").insert({
+        result_type: photoAiResult.result_type,
+        courier: photoAiResult.courier,
+        order_no: photoAiResult.order_no,
+        tracking_number: photoAiResult.tracking_number,
+        phone: photoAiResult.phone,
+        raw_text_found: photoAiResult.raw_text_found,
+        confidence: photoAiResult.confidence,
+      });
+      if (error) throw error;
+      resetPhotoMatchState();
+      await loadUnmatchedList();
+    } catch (err: any) {
+      setPhotoError(err.message ?? "บันทึกไม่สำเร็จ");
+    } finally {
+      setSavingUnmatched(false);
+    }
+  }
+
+  function openUnmatchedRecord(row: UnmatchedReturnPhoto) {
+    const rt = row.result_type === "cancelled" ? "cancelled" : row.result_type === "returned" ? "returned" : "unclear";
+    setPhotoAiResult({
+      result_type: rt,
+      courier: row.courier,
+      order_no: row.order_no,
+      tracking_number: row.tracking_number,
+      phone: row.phone,
+      confidence: (row.confidence as PhotoAiResult["confidence"]) ?? "low",
+      raw_text_found: row.raw_text_found,
+    });
+    setPhotoVoidType(rt === "cancelled" ? "cancelled" : "returned");
+    setPhotoCandidates([]);
+    setPhotoSelectedSaleId(null);
+    setPhotoManualSearchTerm(row.tracking_number || row.order_no || "");
+    setPhotoResolvingRecordId(row.id);
+  }
+
+  async function handleMarkUnmatchedResolvedManually(row: UnmatchedReturnPhoto) {
+    if (!confirm("ปิดรายการนี้โดยไม่เชื่อมกับบิลในระบบ (กรณีจัดการเองนอกระบบแล้ว)?")) return;
+    const { error } = await supabase
+      .from("return_photo_unmatched")
+      .update({ resolved: true, resolved_at: new Date().toISOString() })
+      .eq("id", row.id);
+    if (!error) await loadUnmatchedList();
   }
 
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -347,6 +458,13 @@ export default function SalesClient({
       }
       const { error: voidErr } = await supabase.rpc("void_sale", { p_sale_id: sale.id, p_void_type: photoVoidType });
       if (voidErr) throw voidErr;
+      if (photoResolvingRecordId) {
+        await supabase
+          .from("return_photo_unmatched")
+          .update({ resolved: true, resolved_sale_id: sale.id, resolved_at: new Date().toISOString() })
+          .eq("id", photoResolvingRecordId);
+        await loadUnmatchedList();
+      }
       resetPhotoMatchState();
       router.refresh();
     } catch (err: any) {
@@ -904,6 +1022,46 @@ export default function SalesClient({
         </div>
       )}
 
+      {isAdmin && unmatchedList.length > 0 && (
+        <div className="mb-4 rounded-2xl bg-white p-4 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setUnmatchedOpen((v) => !v)}
+            className="flex w-full items-center justify-between text-sm font-medium text-amber-700"
+          >
+            <span>📋 รายการตีกลับ/ยกเลิกที่ยังหาบิลไม่เจอ ({unmatchedList.length})</span>
+            <span>{unmatchedOpen ? "ซ่อน ▲" : "แสดง ▼"}</span>
+          </button>
+          {unmatchedOpen && (
+            <div className="mt-3 space-y-2">
+              {unmatchedList.map((row) => (
+                <div key={row.id} className="rounded-lg border p-2 text-xs text-gray-700">
+                  <p className="mb-1 font-medium text-gray-800">
+                    {row.result_type === "returned" ? "ตีกลับ" : row.result_type === "cancelled" ? "ยกเลิก" : "ไม่ชัดเจน"}
+                    {row.courier ? ` · ${row.courier}` : ""} · {new Date(row.created_at).toLocaleDateString("th-TH")}
+                  </p>
+                  {row.order_no && <p>Order ID: {row.order_no}</p>}
+                  {row.tracking_number && <p>เลขพัสดุ: {row.tracking_number}</p>}
+                  {row.phone && <p>เบอร์โทร: {row.phone}</p>}
+                  <div className="mt-2 flex gap-3">
+                    <button type="button" onClick={() => openUnmatchedRecord(row)} className="text-brand hover:underline">
+                      ค้นหาบิลด้วยมือ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMarkUnmatchedResolvedManually(row)}
+                      className="text-gray-400 hover:underline"
+                    >
+                      ปิดรายการ (จัดการเองแล้ว)
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
       {unresolvedSkuItems.length > 0 && (
@@ -987,11 +1145,36 @@ export default function SalesClient({
               {photoAiResult.raw_text_found && <p className="text-gray-500">ข้อความที่อ่านได้: {photoAiResult.raw_text_found}</p>}
             </div>
 
-            {photoCandidates.length === 0 ? (
-              <p className="mb-4 rounded-lg bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
-                ไม่พบบิลที่ตรงกับข้อมูลในรูป กรุณาตรวจสอบด้วยตนเองในตารางประวัติการขาย
+            {photoCandidates.length === 0 && (
+              <p className="mb-2 rounded-lg bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                ไม่พบบิลที่ตรงกับข้อมูลในรูปโดยอัตโนมัติ — ลองค้นหาด้วยมือด้านล่าง หรือบันทึกไว้ก่อนแล้วค่อยกลับมาหาทีหลัง
               </p>
-            ) : (
+            )}
+
+            <div className="mb-3 flex gap-2">
+              <input
+                value={photoManualSearchTerm}
+                onChange={(e) => setPhotoManualSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handlePhotoManualSearch();
+                  }
+                }}
+                placeholder="ค้นหาด้วยเลขบิล / ชื่อลูกค้า (Order ID) / เลขพัสดุ"
+                className="flex-1 rounded-lg border px-3 py-1.5 text-sm"
+              />
+              <button
+                type="button"
+                onClick={handlePhotoManualSearch}
+                disabled={photoManualSearching || !photoManualSearchTerm.trim()}
+                className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                {photoManualSearching ? "กำลังค้นหา..." : "ค้นหา"}
+              </button>
+            </div>
+
+            {photoCandidates.length === 0 ? null : (
               <div className="mb-3 max-h-56 space-y-2 overflow-y-auto">
                 {photoCandidates.map((c) => (
                   <label
@@ -1050,6 +1233,16 @@ export default function SalesClient({
                   className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
                 >
                   {applyingPhotoMatch ? "กำลังบันทึก..." : `ยืนยัน${VOID_TYPE_LABEL[photoVoidType]}บิลนี้`}
+                </button>
+              )}
+              {photoCandidates.length === 0 && (
+                <button
+                  type="button"
+                  onClick={handleSaveUnmatched}
+                  disabled={savingUnmatched}
+                  className="flex-1 rounded-lg border border-amber-400 bg-amber-50 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+                >
+                  {savingUnmatched ? "กำลังบันทึก..." : "บันทึกไว้ก่อน (ยังหาบิลไม่เจอ)"}
                 </button>
               )}
               <button

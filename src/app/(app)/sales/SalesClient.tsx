@@ -407,6 +407,7 @@ export default function SalesClient({
       if (error) throw error;
       setPhotoResolvingRecordId(data?.id ?? null);
       await loadUnmatchedList();
+      router.refresh();
     } catch (err: any) {
       console.error("autoSaveUnmatched failed", err);
     }
@@ -436,7 +437,10 @@ export default function SalesClient({
       .from("return_photo_unmatched")
       .update({ resolved: true, resolved_at: new Date().toISOString() })
       .eq("id", row.id);
-    if (!error) await loadUnmatchedList();
+    if (!error) {
+      await loadUnmatchedList();
+      router.refresh();
+    }
   }
 
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {

@@ -1089,15 +1089,15 @@ export default function SalesClient({
       )}
 
       <div className="mb-4 flex flex-wrap items-end gap-2 rounded-2xl bg-white p-4 shadow-sm">
-        <div>
+        <div className="w-[calc(50%-0.25rem)] sm:w-auto">
           <label className="mb-1 block text-xs text-gray-600">จากวันที่</label>
-          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded-lg border px-3 py-1.5 text-sm" />
+          <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="w-full rounded-lg border px-3 py-1.5 text-sm" />
         </div>
-        <div>
+        <div className="w-[calc(50%-0.25rem)] sm:w-auto">
           <label className="mb-1 block text-xs text-gray-600">ถึงวันที่</label>
-          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="rounded-lg border px-3 py-1.5 text-sm" />
+          <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="w-full rounded-lg border px-3 py-1.5 text-sm" />
         </div>
-        <button onClick={applyRange} className="rounded-lg border px-4 py-1.5 text-sm hover:bg-gray-50">แสดงผล</button>
+        <button onClick={applyRange} className="w-full rounded-lg border px-4 py-1.5 text-sm hover:bg-gray-50 sm:w-auto">แสดงผล</button>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -1110,7 +1110,7 @@ export default function SalesClient({
         <select
           value={channelFilter}
           onChange={(e) => setChannelFilter(e.target.value as SaleChannel | "all")}
-          className="rounded-lg border px-3 py-2 text-sm"
+          className="w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
         >
           <option value="all">ทุกช่องทาง</option>
           {(Object.keys(SALE_CHANNEL_LABEL) as SaleChannel[]).map((c) => (
@@ -1120,7 +1120,7 @@ export default function SalesClient({
         <select
           value={paymentFilter}
           onChange={(e) => setPaymentFilter(e.target.value as "all" | "unpaid" | "paid")}
-          className="rounded-lg border px-3 py-2 text-sm"
+          className="w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
         >
           <option value="all">ทุกสถานะรับเงิน</option>
           <option value="unpaid">รอรับเงิน</option>
@@ -1129,14 +1129,95 @@ export default function SalesClient({
         <select
           value={voidTypeFilter}
           onChange={(e) => setVoidTypeFilter(e.target.value as "all" | VoidType)}
-          className="rounded-lg border px-3 py-2 text-sm"
+          className="w-full rounded-lg border px-3 py-2 text-sm sm:w-auto"
         >
           <option value="all">บิลปกติ + ยกเลิกทั้งหมด</option>
           <option value="cancelled">เฉพาะที่ยกเลิก</option>
           <option value="returned">เฉพาะที่ตีกลับ</option>
         </select>
       </div>
-      <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+
+      {/* รายการแบบการ์ด - จอมือถือ */}
+      <div className="space-y-3 md:hidden">
+        {(() => {
+          let lastGroup: string | null = null;
+          return filtered.map((s) => {
+            const isVoid = s.status === "void";
+            const group = saleDateGroupLabel(s.created_at);
+            const showGroupHeader = group !== lastGroup;
+            lastGroup = group;
+            return (
+              <Fragment key={s.id}>
+                {showGroupHeader && (
+                  <p className="pt-1 text-xs font-semibold text-gray-500">{group}</p>
+                )}
+                <div className={`rounded-2xl bg-white p-4 shadow-sm ${isVoid ? "opacity-50" : ""}`}>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <p className="font-medium">{s.sale_no}</p>
+                    <p className={`font-semibold ${isVoid ? "line-through" : ""}`}>
+                      ฿{Number(s.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <p className="mb-2 text-xs text-gray-500">{new Date(s.created_at).toLocaleString("th-TH")}</p>
+                  <p className="mb-2 text-sm text-gray-600">{s.customer_name ?? "-"} · {s.payment_method}</p>
+                  <div className="mb-3 flex flex-wrap items-center gap-1">
+                    {s.source === "imported" && (
+                      <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">นำเข้า</span>
+                    )}
+                    {s.channel !== "store" && (
+                      <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                        {s.channel === "other" ? (s.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[s.channel]}
+                      </span>
+                    )}
+                    {isVoid ? (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                        ยกเลิกแล้ว{s.void_type ? ` (${VOID_TYPE_LABEL[s.void_type]})` : ""}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">สำเร็จ</span>
+                    )}
+                    {!isVoid && s.channel !== "store" && (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          s.payment_status === "unpaid" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                        }`}
+                      >
+                        {SALE_PAYMENT_STATUS_LABEL[s.payment_status]}
+                      </span>
+                    )}
+                    {s.platform_fee_amount > 0 && (
+                      <span className="text-[10px] text-gray-400">
+                        ค่าธรรมเนียม ฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 border-t pt-2 text-sm">
+                    <Link href={`/receipt/${s.id}`} className="text-brand hover:underline">ดูใบเสร็จ</Link>
+                    {isAdmin && !isVoid && s.channel !== "store" && s.payment_status === "unpaid" && (
+                      <button onClick={() => openReceiveConfirm(s)} className="text-emerald-600 hover:underline">
+                        ยืนยันรับเงิน
+                      </button>
+                    )}
+                    {isAdmin && !isVoid && s.channel !== "store" && s.payment_status === "paid" && (
+                      <button onClick={() => handleUndoReceive(s)} className="text-gray-400 hover:underline">
+                        ยกเลิกรับเงิน
+                      </button>
+                    )}
+                    {isAdmin && !isVoid && (
+                      <button onClick={() => openVoidConfirm(s)} className="text-red-600 hover:underline">
+                        ยกเลิกบิล
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </Fragment>
+            );
+          });
+        })()}
+        {filtered.length === 0 && <p className="rounded-2xl bg-white px-4 py-10 text-center text-gray-400 shadow-sm">ไม่มีรายการขาย</p>}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-2xl bg-white shadow-sm md:block">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-gray-500">

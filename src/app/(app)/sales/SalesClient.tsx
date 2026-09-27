@@ -228,6 +228,7 @@ export default function SalesClient({
   const [photoManualSearchTerm, setPhotoManualSearchTerm] = useState("");
   const [photoManualSearching, setPhotoManualSearching] = useState(false);
   const [photoResolvingRecordId, setPhotoResolvingRecordId] = useState<string | null>(null);
+  const [photoAutoSaveNotice, setPhotoAutoSaveNotice] = useState<string | null>(null);
 
   // รายการถ่ายรูปตีกลับ/ยกเลิกที่ AI หาบิลไม่เจอ ค้างไว้ให้กลับมาค้นหาด้วยมือทีหลัง
   const [unmatchedList, setUnmatchedList] = useState<UnmatchedReturnPhoto[]>([]);
@@ -415,6 +416,7 @@ export default function SalesClient({
     if (!file) return;
     setPhotoUploading(true);
     setPhotoError(null);
+    setPhotoAutoSaveNotice(null);
     setPhotoAiResult(null);
     setPhotoCandidates([]);
     setPhotoSelectedSaleId(null);
@@ -428,14 +430,21 @@ export default function SalesClient({
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "อ่านรูปไม่สำเร็จ");
       const ai: PhotoAiResult = json.result;
-      setPhotoAiResult(ai);
-      setPhotoVoidType(ai.result_type === "cancelled" ? "cancelled" : "returned");
 
       const candidates = await searchSalesByPhotoResult(ai);
-      setPhotoCandidates(candidates);
-      setPhotoSelectedSaleId(candidates[0]?.id ?? null);
       if (candidates.length === 0) {
+        // หาบิลไม่เจอ — บันทึกลงรายการค้างอัตโนมัติแล้วปิดหน้าต่างทันที พร้อมถ่ายรูปถัดไปได้เลย
         await autoSaveUnmatched(ai);
+        resetPhotoMatchState();
+        setPhotoAutoSaveNotice(
+          `บันทึก "${ai.result_type === "returned" ? "ตีกลับ" : ai.result_type === "cancelled" ? "ยกเลิก" : "ไม่ชัดเจน"}" ไว้ในรายการที่ยังหาบิลไม่เจอแล้ว` +
+            (ai.tracking_number ? ` (เลขพัสดุ ${ai.tracking_number})` : ai.order_no ? ` (Order ID ${ai.order_no})` : "")
+        );
+      } else {
+        setPhotoAiResult(ai);
+        setPhotoVoidType(ai.result_type === "cancelled" ? "cancelled" : "returned");
+        setPhotoCandidates(candidates);
+        setPhotoSelectedSaleId(candidates[0]?.id ?? null);
       }
     } catch (err: any) {
       setPhotoError(err.message ?? "อ่านรูปไม่สำเร็จ กรุณาลองใหม่");
@@ -1022,6 +1031,9 @@ export default function SalesClient({
             ถ่ายรูปป้ายพัสดุตีกลับ หรือหน้าจอออเดอร์ที่ลูกค้ายกเลิก — AI จะอ่านและค้นหาบิลที่ตรงกันให้ยืนยันก่อนเปลี่ยนสถานะ
           </span>
           {photoError && !photoAiResult && <p className="w-full text-xs text-red-600">{photoError}</p>}
+          {photoAutoSaveNotice && !photoAiResult && (
+            <p className="w-full text-xs text-amber-700">⚠ {photoAutoSaveNotice}</p>
+          )}
         </div>
       )}
 

@@ -11,6 +11,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [shopName, setShopName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -30,10 +31,10 @@ export default function LoginPage() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { full_name: fullName, role: "cashier" } },
+          options: { data: { full_name: fullName, shop_name: shopName } },
         });
         if (error) throw error;
-        setInfo("สมัครสมาชิกสำเร็จ! ตรวจสอบอีเมลเพื่อยืนยันบัญชี (หรือเข้าสู่ระบบได้เลยถ้าปิดการยืนยันอีเมลไว้)");
+        setInfo("สมัครสมาชิกสำเร็จ! ระบบสร้างร้านของคุณให้แล้ว (ทดลองใช้ฟรี 14 วัน) ตรวจสอบอีเมลเพื่อยืนยันบัญชี (หรือเข้าสู่ระบบได้เลยถ้าปิดการยืนยันอีเมลไว้)");
         setMode("login");
       }
     } catch (err: any) {
@@ -53,15 +54,28 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "signup" && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">ชื่อ-นามสกุล</label>
-              <input
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                required
-              />
-            </div>
+            <>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">ชื่อ-นามสกุล</label>
+                <input
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">ชื่อร้าน</label>
+                <input
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
+                  value={shopName}
+                  onChange={(e) => setShopName(e.target.value)}
+                  placeholder="เช่น ร้านกาแฟสดใจดี"
+                  required
+                />
+                <p className="mt-1 text-xs text-gray-400">ระบบจะสร้างร้านใหม่ให้คุณอัตโนมัติ พร้อมตั้งคุณเป็นแอดมินร้านนี้ ทดลองใช้ฟรี 14 วัน</p>
+              </div>
+            </>
           )}
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">อีเมล</label>

@@ -228,7 +228,6 @@ export default function SalesClient({
   const [photoManualSearchTerm, setPhotoManualSearchTerm] = useState("");
   const [photoManualSearching, setPhotoManualSearching] = useState(false);
   const [photoResolvingRecordId, setPhotoResolvingRecordId] = useState<string | null>(null);
-  const [savingUnmatched, setSavingUnmatched] = useState(false);
 
   // รายการถ่ายรูปตีกลับ/ยกเลิกที่ AI หาบิลไม่เจอ ค้างไว้ให้กลับมาค้นหาด้วยมือทีหลัง
   const [unmatchedList, setUnmatchedList] = useState<UnmatchedReturnPhoto[]>([]);
@@ -359,27 +358,28 @@ export default function SalesClient({
     }
   }
 
-  async function handleSaveUnmatched() {
-    if (!photoAiResult) return;
-    setSavingUnmatched(true);
-    setPhotoError(null);
+  // หา AI จับคู่บิลไม่เจอ -> บันทึกลงรายการค้างให้อัตโนมัติทันที (ไม่ต้องรอกดปุ่มเอง)
+  // ผูก id ของ record ไว้กับ photoResolvingRecordId เลย เผื่อผู้ใช้ค้นหาด้วยมือ/ยืนยันจับคู่ต่อในหน้าต่างเดียวกัน
+  async function autoSaveUnmatched(ai: PhotoAiResult) {
     try {
-      const { error } = await supabase.from("return_photo_unmatched").insert({
-        result_type: photoAiResult.result_type,
-        courier: photoAiResult.courier,
-        order_no: photoAiResult.order_no,
-        tracking_number: photoAiResult.tracking_number,
-        phone: photoAiResult.phone,
-        raw_text_found: photoAiResult.raw_text_found,
-        confidence: photoAiResult.confidence,
-      });
+      const { data, error } = await supabase
+        .from("return_photo_unmatched")
+        .insert({
+          result_type: ai.result_type,
+          courier: ai.courier,
+          order_no: ai.order_no,
+          tracking_number: ai.tracking_number,
+          phone: ai.phone,
+          raw_text_found: ai.raw_text_found,
+          confidence: ai.confidence,
+        })
+        .select("id")
+        .single();
       if (error) throw error;
-      resetPhotoMatchState();
+      setPhotoResolvingRecordId(data?.id ?? null);
       await loadUnmatchedList();
     } catch (err: any) {
-      setPhotoError(err.message ?? "บันทึกไม่สำเร็จ");
-    } finally {
-      setSavingUnmatched(false);
+      console.error("autoSaveUnmatched failed", err);
     }
   }
 
@@ -434,6 +434,9 @@ export default function SalesClient({
       const candidates = await searchSalesByPhotoResult(ai);
       setPhotoCandidates(candidates);
       setPhotoSelectedSaleId(candidates[0]?.id ?? null);
+      if (candidates.length === 0) {
+        await autoSaveUnmatched(ai);
+      }
     } catch (err: any) {
       setPhotoError(err.message ?? "อ่านรูปไม่สำเร็จ กรุณาลองใหม่");
     } finally {
@@ -1147,7 +1150,8 @@ export default function SalesClient({
 
             {photoCandidates.length === 0 && (
               <p className="mb-2 rounded-lg bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
-                ไม่พบบิลที่ตรงกับข้อมูลในรูปโดยอัตโนมัติ — ลองค้นหาด้วยมือด้านล่าง หรือบันทึกไว้ก่อนแล้วค่อยกลับมาหาทีหลัง
+                ไม่พบบิลที่ตรงกับข้อมูลในรูปโดยอัตโนมัติ — ระบบบันทึกไว้ในรายการ "ยังหาบิลไม่เจอ" ให้แล้ว
+                ลองค้นหาด้วยมือด้านล่าง หรือกดปิดแล้วกลับมาหาทีหลังได้
               </p>
             )}
 
@@ -1233,16 +1237,6 @@ export default function SalesClient({
                   className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
                 >
                   {applyingPhotoMatch ? "กำลังบันทึก..." : `ยืนยัน${VOID_TYPE_LABEL[photoVoidType]}บิลนี้`}
-                </button>
-              )}
-              {photoCandidates.length === 0 && (
-                <button
-                  type="button"
-                  onClick={handleSaveUnmatched}
-                  disabled={savingUnmatched}
-                  className="flex-1 rounded-lg border border-amber-400 bg-amber-50 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-60"
-                >
-                  {savingUnmatched ? "กำลังบันทึก..." : "บันทึกไว้ก่อน (ยังหาบิลไม่เจอ)"}
                 </button>
               )}
               <button

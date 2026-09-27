@@ -91,19 +91,20 @@ export interface SaleItem {
   cost_price: number;
 }
 
-export type SaleChannel = "store" | "shopee" | "lazada" | "tiktok" | "online_store" | "other";
+export type SaleChannel = "store" | "shopee" | "lazada" | "tiktok" | "thaimart" | "online_store" | "other";
 
 export const SALE_CHANNEL_LABEL: Record<SaleChannel, string> = {
   store: "หน้าร้าน",
   shopee: "Shopee",
   lazada: "Lazada",
   tiktok: "TikTok Shop",
+  thaimart: "ThaiMart",
   online_store: "ร้านค้าออนไลน์",
   other: "แพลตฟอร์มอื่น",
 };
 
 // channels a cashier can pick manually at POS — online_store is set only via confirm_online_order
-export const MANUAL_SALE_CHANNELS: SaleChannel[] = ["store", "shopee", "lazada", "tiktok", "other"];
+export const MANUAL_SALE_CHANNELS: SaleChannel[] = ["store", "shopee", "lazada", "tiktok", "thaimart", "other"];
 
 export interface Sale {
   id: string;

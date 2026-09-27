@@ -28,22 +28,29 @@ const SALE_HEADER_MAP: Record<string, string> = {
 
 const ORDER_HEADER_MAP: Record<string, string> = {
   order_no: "order_no", "เลขออเดอร์": "order_no", "เลขที่ออเดอร์": "order_no", "เลขที่บิล": "order_no", "เลขบิล": "order_no",
-  "order id": "order_no",
+  "order id": "order_no", "เลขคำสั่งซื้อ": "order_no",
   date: "date", "วันที่": "date",
   sku: "sku", "รหัสสินค้า": "sku", "รหัส": "sku",
   "seller sku": "sku",
   product_name: "product_name", "สินค้า": "product_name", "ชื่อสินค้า": "product_name",
   "product name": "product_name",
   variation: "variation", "ตัวเลือกสินค้า": "variation", "รายละเอียด": "variation",
+  "ตัวเลือกสินค้า (variant)": "variation",
   qty: "qty", "จำนวน": "qty",
   quantity: "qty",
   unit_price: "unit_price", "ราคาต่อหน่วย": "unit_price", "ราคา": "unit_price",
-  "sku unit original price": "unit_price",
-  "sku subtotal after discount": "subtotal_after_discount",
+  "sku unit original price": "unit_price", "ราคาต่อหน่วย (บาท)": "unit_price",
+  "sku subtotal after discount": "subtotal_after_discount", "ราคารวมรายการ (บาท)": "subtotal_after_discount",
   "sku id": "platform_sku_id",
   "tracking id": "tracking_number", "tracking number": "tracking_number", "เลขพัสดุ": "tracking_number", "เลขพัสดุขนส่ง": "tracking_number",
-  "*หมายเลขติดตามพัสดุ": "tracking_number", "หมายเลขติดตามพัสดุ": "tracking_number",
+  "*หมายเลขติดตามพัสดุ": "tracking_number", "หมายเลขติดตามพัสดุ": "tracking_number", "tracking no.": "tracking_number",
 };
+
+// ช่องทางที่ไฟล์ออเดอร์มีรหัส SKU ของเราเองอยู่แล้ว (ไม่มีรหัส SKU ID ของแพลตฟอร์มแบบ TikTok/Shopee) —
+// จับคู่สินค้าด้วยรหัส SKU ตรงกับที่ตั้งไว้ในหน้าจัดการสต๊อกสินค้าได้เลย ไม่ต้องยืนยันจับคู่ SKU ID ก่อน
+function channelUsesDirectSku(channel: SaleChannel): boolean {
+  return channel === "thaimart";
+}
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
   cash: "cash", เงินสด: "cash",
@@ -120,6 +127,14 @@ function findProductBySkuId(
   const productId = skuMap.get(platformSkuId);
   if (!productId) return null;
   return productList.find((p) => p.id === productId) ?? null;
+}
+
+// จับคู่ตรงด้วยรหัส SKU ของเราเอง (ไม่ผ่าน platform_sku_map) — ใช้กับช่องทางที่ไฟล์มีรหัส SKU
+// ของระบบเราอยู่แล้ว เช่น ThaiMart
+function findProductBySku(productList: CatalogProduct[], sku: string): CatalogProduct | null {
+  const code = sku.trim().toLowerCase();
+  if (!code) return null;
+  return productList.find((p) => (p.sku ?? "").trim().toLowerCase() === code) ?? null;
 }
 
 function saleDateGroupLabel(iso: string): string {
@@ -535,10 +550,14 @@ export default function SalesClient({
         const items: { product_id: string; qty: number; discount: number }[] = [];
         let orderTotal = 0;
         for (const it of g.items) {
-          const product = findProductBySkuId(skuMap, productList, it.platform_sku_id);
+          const product = channelUsesDirectSku(channel)
+            ? findProductBySku(productList, it.sku)
+            : findProductBySkuId(skuMap, productList, it.platform_sku_id);
           if (!product) {
             throw new Error(
-              it.platform_sku_id
+              channelUsesDirectSku(channel)
+                ? `ไม่พบสินค้าที่มีรหัส SKU "${it.sku}" (${it.product_name} ${it.variation}) ในหน้าจัดการสต๊อกสินค้า`
+                : it.platform_sku_id
                 ? `ยังไม่ได้จับคู่ SKU ID "${it.platform_sku_id}" (${it.product_name} ${it.variation}) กับสินค้าในระบบ`
                 : `แถวสินค้า "${it.product_name || it.sku}" ไม่มี SKU ID ในไฟล์ จับคู่ไม่ได้`
             );
@@ -658,21 +677,24 @@ export default function SalesClient({
 
       // จับคู่ด้วย SKU ID เท่านั้น (เข้มงวด) — เก็บรายการ SKU ID ที่มีในไฟล์แต่ยังไม่เคยจับคู่กับ
       // สินค้าในระบบไว้ใน unresolved เพื่อให้ผู้ใช้ยืนยันจับคู่เองก่อน ค่อยนำเข้าออเดอร์ที่เกี่ยวข้องต่อ
+      // (ช่องทางที่ใช้รหัส SKU ตรงของเราเอง เช่น ThaiMart ไม่ต้องผ่านขั้นตอนนี้ — จับคู่ได้ทันที)
       const unresolvedMap = new Map<string, UnresolvedSkuItem>();
-      for (const g of groups.values()) {
-        for (const it of g.items) {
-          if (!it.platform_sku_id) continue;
-          if (skuMap.has(it.platform_sku_id)) continue;
-          const existing = unresolvedMap.get(it.platform_sku_id);
-          if (existing) {
-            existing.qty += it.qty;
-          } else {
-            unresolvedMap.set(it.platform_sku_id, {
-              platform_sku_id: it.platform_sku_id,
-              product_name: it.product_name,
-              variation: it.variation,
-              qty: it.qty,
-            });
+      if (!channelUsesDirectSku(orderChannel)) {
+        for (const g of groups.values()) {
+          for (const it of g.items) {
+            if (!it.platform_sku_id) continue;
+            if (skuMap.has(it.platform_sku_id)) continue;
+            const existing = unresolvedMap.get(it.platform_sku_id);
+            if (existing) {
+              existing.qty += it.qty;
+            } else {
+              unresolvedMap.set(it.platform_sku_id, {
+                platform_sku_id: it.platform_sku_id,
+                product_name: it.product_name,
+                variation: it.variation,
+                qty: it.qty,
+              });
+            }
           }
         }
       }
@@ -825,7 +847,8 @@ export default function SalesClient({
           <p className="text-xs text-gray-400">
             รองรับไฟล์ออเดอร์จากแพลตฟอร์มที่มีคอลัมน์ เลขออเดอร์, วันที่, สินค้า, จำนวน, ราคาต่อหน่วย, SKU ID —
             จับคู่สินค้าด้วย "SKU ID" ของแพลตฟอร์มเท่านั้น (แม่นยำกว่าจับคู่ด้วยชื่อ) ถ้าเจอ SKU ID ที่ยังไม่เคยจับคู่
-            ระบบจะให้เลือกสินค้าที่ตรงกันก่อน 1 ครั้ง แล้วจดจำไว้ใช้อัตโนมัติในครั้งต่อไป ตัดสต๊อกจริงและตั้งสถานะเป็น
+            ระบบจะให้เลือกสินค้าที่ตรงกันก่อน 1 ครั้ง แล้วจดจำไว้ใช้อัตโนมัติในครั้งต่อไป (ช่องทาง ThaiMart จับคู่ด้วยรหัส
+            SKU ของเราเองในไฟล์ตรงกับหน้าจัดการสต๊อกสินค้าได้เลย ไม่ต้องยืนยันก่อน) ตัดสต๊อกจริงและตั้งสถานะเป็น
             "รอรับเงิน" ให้อัตโนมัติ (ยืนยันรับเงินได้ในตารางด้านล่างเมื่อแพลตฟอร์มโอนเงินมาแล้ว) — ถ้าไฟล์มีคอลัมน์
             "Tracking ID"/เลขพัสดุ ระบบจะบันทึกเลขพัสดุไว้กับบิลด้วย เพื่อให้ฟีเจอร์ถ่ายรูปแจ้งตีกลับด้านบนจับคู่บิลได้
           </p>

@@ -59,6 +59,7 @@ interface PO {
   po_total: number | null;
   supplier_invoice_no: string | null;
   freight_cost: number;
+  attachment_url: string | null;
   suppliers: { name: string } | { name: string }[] | null;
   purchase_order_items: POItem[];
 }
@@ -232,6 +233,8 @@ export default function PurchaseOrdersClient({
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [note, setNote] = useState("");
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState("");
+  const [attachmentUrl, setAttachmentUrl] = useState("");
+  const [linkSavingId, setLinkSavingId] = useState<string | null>(null);
   const [freightCost, setFreightCost] = useState("");
   const [lines, setLines] = useState<DraftLine[]>([{ productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
   const [busy, setBusy] = useState(false);
@@ -275,7 +278,7 @@ export default function PurchaseOrdersClient({
     }
     setBusy(true);
     try {
-      const { error } = await supabase.rpc("create_purchase_order", {
+      const { data: newPoId, error } = await supabase.rpc("create_purchase_order", {
         p_supplier_id: supplierId || null,
         p_items: items,
         p_note: note || null,
@@ -283,8 +286,14 @@ export default function PurchaseOrdersClient({
         p_freight_cost: Number(freightCost) || 0,
       });
       if (error) throw error;
+      const link = normalizeUrl(attachmentUrl);
+      if (link && newPoId) {
+        const { error: linkErr } = await supabase.rpc("set_po_attachment_url", { p_po_id: newPoId, p_url: link });
+        if (linkErr) throw new Error("สร้างใบสั่งซื้อแล้ว แต่บันทึกลิงก์ไม่สำเร็จ: " + linkErr.message);
+      }
       setLines([{ productId: products[0]?.id ?? "", qty: "", unitCost: "" }]);
       setNote("");
+      setAttachmentUrl("");
       setSupplierInvoiceNo("");
       setFreightCost("");
       setShowCreate(false);
@@ -293,6 +302,29 @@ export default function PurchaseOrdersClient({
       setError(err.message ?? "สร้างใบสั่งซื้อไม่สำเร็จ");
     } finally {
       setBusy(false);
+    }
+  }
+
+  // ลิงก์เอกสารแนบ (Google Drive ฯลฯ) — ไม่บังคับ ถ้าพิมพ์มาไม่มี http(s):// จะเติม https:// ให้เอง
+  function normalizeUrl(raw: string): string {
+    const v = raw.trim();
+    if (!v) return "";
+    return /^https?:\/\//i.test(v) ? v : "https://" + v;
+  }
+
+  async function handleEditLink(po: PO) {
+    const entered = prompt("ใส่ลิงก์เอกสารแนบ (เช่น Google Drive) — เว้นว่างเพื่อลบลิงก์", po.attachment_url ?? "");
+    if (entered === null) return;
+    setLinkSavingId(po.id);
+    setError(null);
+    try {
+      const { error } = await supabase.rpc("set_po_attachment_url", { p_po_id: po.id, p_url: normalizeUrl(entered) || null });
+      if (error) throw error;
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? "บันทึกลิงก์ไม่สำเร็จ");
+    } finally {
+      setLinkSavingId(null);
     }
   }
 
@@ -756,6 +788,14 @@ export default function PurchaseOrdersClient({
           </div>
 
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="หมายเหตุ" className="w-full rounded-lg border px-3 py-2 text-sm" />
+          <input
+            type="text"
+            inputMode="url"
+            value={attachmentUrl}
+            onChange={(e) => setAttachmentUrl(e.target.value)}
+            placeholder="ลิงก์เอกสารแนบ เช่น Google Drive (ไม่บังคับ)"
+            className="w-full rounded-lg border px-3 py-2 text-sm"
+          />
 
           <div className="space-y-1 rounded-xl bg-gray-50 p-3">
             <div className="flex justify-between text-sm text-gray-600">
@@ -843,6 +883,27 @@ export default function PurchaseOrdersClient({
               </div>
             </div>
             {po.note && <p className="mb-2 text-xs text-gray-500">หมายเหตุ: {po.note}</p>}
+            <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
+              {po.attachment_url ? (
+                <a
+                  href={po.attachment_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex max-w-full items-center gap-1 truncate rounded-lg bg-blue-50 px-2.5 py-1 font-medium text-brand hover:underline"
+                  title={po.attachment_url}
+                >
+                  🔗 เปิดลิงก์เอกสารแนบ
+                </a>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => handleEditLink(po)}
+                disabled={linkSavingId === po.id}
+                className="text-gray-500 hover:text-brand hover:underline disabled:opacity-50"
+              >
+                {linkSavingId === po.id ? "กำลังบันทึก..." : po.attachment_url ? "แก้ไขลิงก์" : "+ เพิ่มลิงก์เอกสาร"}
+              </button>
+            </div>
             {po.status === "received" && (
               <p className="mb-2 text-xs text-gray-400">
                 มูลค่าใบสั่งซื้อ ฿{Number(po.po_total ?? 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}

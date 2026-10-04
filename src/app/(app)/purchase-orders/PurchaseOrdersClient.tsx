@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
+import DocumentScanButton from "@/components/DocumentScanButton";
 
 const PO_HEADER_MAP: Record<string, string> = {
   sku: "sku", "รหัสสินค้า": "sku", "รหัส": "sku",
@@ -60,6 +61,7 @@ interface PO {
   supplier_invoice_no: string | null;
   freight_cost: number;
   attachment_url: string | null;
+  document_path: string | null;
   suppliers: { name: string } | { name: string }[] | null;
   purchase_order_items: POItem[];
 }
@@ -222,10 +224,12 @@ export default function PurchaseOrdersClient({
   suppliers,
   products,
   orders,
+  shopId,
 }: {
   suppliers: SupplierOption[];
   products: ProductOption[];
   orders: PO[];
+  shopId: string;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -903,6 +907,13 @@ export default function PurchaseOrdersClient({
               >
                 {linkSavingId === po.id ? "กำลังบันทึก..." : po.attachment_url ? "แก้ไขลิงก์" : "+ เพิ่มลิงก์เอกสาร"}
               </button>
+              <DocumentScanButton
+                kind="po"
+                recordId={po.id}
+                shopId={shopId}
+                documentPath={po.document_path}
+                onChanged={() => router.refresh()}
+              />
             </div>
             {po.status === "received" && (
               <p className="mb-2 text-xs text-gray-400">

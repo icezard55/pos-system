@@ -376,6 +376,7 @@ export interface Expense {
   sale_id: string | null;
   created_by: string | null;
   created_at: string;
+  document_path?: string | null;
 }
 
 export interface RecurringExpense {

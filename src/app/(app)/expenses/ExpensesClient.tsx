@@ -2,6 +2,7 @@
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import DocumentScanButton from "@/components/DocumentScanButton";
 import {
   EXPENSE_CATEGORY_LABEL,
   RECURRING_EXPENSE_CATEGORIES,
@@ -131,8 +132,10 @@ export default function ExpensesClient({
     if (!confirm("ลบรายการรายจ่ายนี้?")) return;
     setError(null);
     try {
+      const docPath = expenses.find((x) => x.id === id)?.document_path;
       const { error } = await supabase.from("expenses").delete().eq("id", id);
       if (error) throw error;
+      if (docPath) await supabase.storage.from("documents").remove([docPath]);
       setExpenses((prev) => prev.filter((e) => e.id !== id));
       router.refresh();
     } catch (err: any) {
@@ -502,9 +505,18 @@ export default function ExpensesClient({
                   </td>
                   <td className="py-2 text-gray-500">{e.note ?? "-"}</td>
                   <td className="py-2 text-right">
-                    {e.source !== "po_freight" && (
-                      <button onClick={() => handleDeleteExpense(e.id)} className="text-red-500 hover:underline">ลบ</button>
-                    )}
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      <DocumentScanButton
+                        kind="expense"
+                        recordId={e.id}
+                        shopId={shopId}
+                        documentPath={e.document_path ?? null}
+                        onChanged={(p) => setExpenses((prev) => prev.map((x) => (x.id === e.id ? { ...x, document_path: p } : x)))}
+                      />
+                      {e.source !== "po_freight" && (
+                        <button onClick={() => handleDeleteExpense(e.id)} className="text-xs text-red-500 hover:underline">ลบ</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

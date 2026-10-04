@@ -7,7 +7,7 @@ export default async function PurchaseOrdersPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  const { data: profile } = await supabase.from("profiles").select("role, shop_id").eq("id", user!.id).single();
   if (profile?.role !== "admin") redirect("/dashboard");
 
   const { data: suppliers } = await supabase.from("suppliers").select("id, name").order("name");
@@ -27,6 +27,7 @@ export default async function PurchaseOrdersPage() {
       suppliers={suppliers ?? []}
       products={products ?? []}
       orders={(orders as any) ?? []}
+      shopId={profile?.shop_id ?? ""}
     />
   );
 }

@@ -30,10 +30,10 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
-// ย่อรูป (ด้านยาวสุด 2000px) + ถ้าเปิดโหมดเอกสาร: แปลงเป็นโทนขาวดำและเพิ่มความคมชัดให้ตัวหนังสืออ่านง่าย
+// ย่อรูป (ด้านยาวสุด 1600px, JPEG 65%) + ถ้าเปิดโหมดเอกสาร: แปลงเป็นโทนขาวดำและเพิ่มความคมชัดให้ตัวหนังสืออ่านง่าย
 async function processImage(file: File, docMode: boolean): Promise<Page> {
   const img = await loadImage(file);
-  const maxDim = 2000;
+  const maxDim = 1600;
   let w = img.naturalWidth;
   let h = img.naturalHeight;
   if (w > maxDim || h > maxDim) {
@@ -75,7 +75,7 @@ async function processImage(file: File, docMode: boolean): Promise<Page> {
     }
     ctx.putImageData(im, 0, 0);
   }
-  return { id: Math.random().toString(36).slice(2), dataUrl: canvas.toDataURL("image/jpeg", 0.8), w, h };
+  return { id: Math.random().toString(36).slice(2), dataUrl: canvas.toDataURL("image/jpeg", 0.65), w, h };
 }
 
 async function buildPdf(pages: Page[]): Promise<Blob> {

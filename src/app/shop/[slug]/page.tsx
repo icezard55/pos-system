@@ -39,6 +39,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
       shopName={shopSettings?.shop_name ?? shop.name ?? "ร้านค้าออนไลน์"}
       promotions={promotions ?? []}
       contactEmail={(contactEmail as string | null) ?? null}
+      shopPhone={shopSettings?.phone ?? null}
     />
   );
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -11,6 +11,7 @@ const links = [
   { href: "/sales", label: "ประวัติการขาย", icon: "🧾", roles: ["admin", "cashier"] },
   { href: "/customers", label: "ลูกค้า/สมาชิก", icon: "🧑‍🤝‍🧑", roles: ["admin", "cashier"] },
   { href: "/online-orders", label: "ออเดอร์ออนไลน์", icon: "🛍️", roles: ["admin"] },
+  { href: "/chat", label: "แชทลูกค้า", icon: "💬", roles: ["admin"] },
   { href: "/products", label: "จัดการสต๊อกสินค้า", icon: "📦", roles: ["admin"] },
   { href: "/stock-adjustments", label: "ปรับสต๊อก", icon: "🛠️", roles: ["admin"] },
   { href: "/purchase-orders", label: "ใบสั่งซื้อ", icon: "📥", roles: ["admin"] },
@@ -43,6 +44,26 @@ export default function NavClient({
   const router = useRouter();
   const supabase = createClient();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
+
+  // จำนวนข้อความแชทจากลูกค้าที่ยังไม่อ่าน (เฉพาะแอดมิน) — เช็คทุก 20 วินาที
+  useEffect(() => {
+    if (role !== "admin") return;
+    let alive = true;
+    const check = async () => {
+      const { data } = await supabase.from("chat_conversations").select("unread_admin").gt("unread_admin", 0).limit(500);
+      if (alive && data) setChatUnread(data.reduce((t: number, r: { unread_admin: number }) => t + Number(r.unread_admin || 0), 0));
+    };
+    check();
+    const id = setInterval(check, 20000);
+    return () => { alive = false; clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, pathname]);
+
+  const badge = (href: string) =>
+    href === "/chat" && chatUnread > 0 ? (
+      <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white">{chatUnread}</span>
+    ) : null;
 
   async function handleSignOut() {
     await supabase.auth.signOut();
@@ -75,6 +96,7 @@ export default function NavClient({
             >
               <span>{l.icon}</span>
               {l.label}
+              {badge(l.href)}
             </Link>
           ))}
           {isPlatformOwner && (
@@ -124,7 +146,10 @@ export default function NavClient({
             menuOpen ? "text-brand" : "text-gray-400"
           }`}
         >
-          <span className="text-lg leading-none">☰</span>
+          <span className="relative text-lg leading-none">
+            ☰
+            {chatUnread > 0 && <span className="absolute -right-2 -top-1 h-2.5 w-2.5 rounded-full bg-rose-500" />}
+          </span>
           เมนู
         </button>
       </nav>
@@ -167,6 +192,7 @@ export default function NavClient({
                 >
                   <span>{l.icon}</span>
                   {l.label}
+                  {badge(l.href)}
                 </Link>
               ))}
               {isPlatformOwner && (

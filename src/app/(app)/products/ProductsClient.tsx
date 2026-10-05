@@ -179,7 +179,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
     setMsg(null);
     try {
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `products/${form.id || "new"}-${Date.now()}.${ext}`;
+      const path = `${shopId}/products/${form.id || "new"}-${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage.from("shop-uploads").upload(path, file, {
         cacheControl: "3600",
         upsert: false,
@@ -572,7 +572,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <form onSubmit={handleSave} className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+          <form onSubmit={handleSave} className="max-h-[92vh] w-full max-w-lg overflow-y-auto overscroll-contain rounded-2xl bg-white p-6 shadow-xl">
             <h2 className="mb-4 text-lg font-bold">{form.id ? "แก้ไขสินค้า" : "เพิ่มสินค้าใหม่"}</h2>
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
@@ -965,7 +965,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
               )}
             </div>
             {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="sticky -bottom-6 -mx-6 -mb-6 mt-6 flex justify-end gap-2 border-t bg-white px-6 py-4">
               <button type="button" onClick={() => setShowModal(false)} className="rounded-lg border px-4 py-2 text-sm">ยกเลิก</button>
               <button disabled={busy} type="submit" className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-60">
                 {busy ? "กำลังบันทึก..." : "บันทึก"}

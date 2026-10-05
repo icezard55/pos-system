@@ -181,7 +181,15 @@ export default function ReceiptClient({
             <p className="pt-1 text-center text-[10px] text-gray-400">(ราคาสินค้ารวมภาษีมูลค่าเพิ่มแล้ว)</p>
           </div>
         )}
-        <p className="mt-4 text-center text-xs text-gray-400">ขอบคุณที่ใช้บริการ</p>
+        <p className="mt-4 whitespace-pre-line text-center text-xs text-gray-500">
+          {shopSettings?.receipt_footer_text?.trim() || "ขอบคุณที่ใช้บริการ"}
+        </p>
+        {shopSettings?.receipt_qr_url && (
+          <div className="mt-3 flex justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={shopSettings.receipt_qr_url} alt="QR ร้าน" crossOrigin="anonymous" className="h-28 w-28 object-contain" />
+          </div>
+        )}
 
         <div className="no-print mt-6 space-y-2">
           <div className="flex items-center justify-center gap-2 text-xs text-gray-500">

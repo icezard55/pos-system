@@ -40,6 +40,7 @@ export default function ShopClient({
   shopName,
   promotions = [],
   contactEmail = null,
+  shopPhone = null,
 }: {
   shopId: string;
   shopSlug: string;
@@ -47,12 +48,18 @@ export default function ShopClient({
   shopName: string;
   promotions?: ActivePromotion[];
   contactEmail?: string | null;
+  shopPhone?: string | null;
 }) {
   const supabase = createClient();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [view, setView] = useState<View>("browse");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
+  const [sortMode, setSortMode] = useState<"recommended" | "price_asc" | "price_desc" | "name">("recommended");
+  const [hideOutOfStock, setHideOutOfStock] = useState(true);
+  const PAGE = 40;
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  useEffect(() => { setVisibleCount(PAGE); }, [search, category, sortMode, hideOutOfStock]);
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -592,143 +599,211 @@ export default function ShopClient({
     );
   }
 
+  // ---------- หน้ารวมสินค้า ----------
+  type DisplayItem = {
+    key: string;
+    kind: "single" | "group";
+    name: string;
+    image: string | null;
+    color: string | null;
+    minPrice: number;
+    maxPrice: number;
+    available: boolean;
+    stockText: string;
+    promoText: string | null;
+    product?: StorefrontProduct;
+    groupName?: string;
+  };
+  const displayItems: DisplayItem[] = groupedProducts.map((item) => {
+    if (item.type === "single") {
+      const p = item.product;
+      const out = !p.no_stock_tracking && Number(p.stock_qty) <= 0;
+      const promo = promoMap.get(p.id);
+      return {
+        key: p.id, kind: "single", name: p.name, image: p.image_url, color: p.card_color,
+        minPrice: Number(p.sell_price), maxPrice: Number(p.sell_price), available: !out,
+        stockText: p.no_stock_tracking ? "พร้อมส่ง" : out ? "สินค้าหมด" : `เหลือ ${p.stock_qty} ${p.unit}`,
+        promoText: promo ? promotionBadgeText(promo) : null, product: p,
+      };
+    }
+    const vs = item.variants;
+    const prices = vs.map((v) => Number(v.sell_price));
+    const totalStock = vs.reduce((t, v) => t + Math.max(0, Number(v.stock_qty)), 0);
+    const always = vs.some((v) => v.no_stock_tracking);
+    const promoV = vs.map((v) => promoMap.get(v.id)).find(Boolean);
+    return {
+      key: `group-${item.groupName}`, kind: "group", name: item.groupName, image: vs[0].image_url, color: vs[0].card_color,
+      minPrice: Math.min(...prices), maxPrice: Math.max(...prices), available: always || totalStock > 0,
+      stockText: !always && totalStock <= 0 ? "สินค้าหมด" : `${vs.length} ตัวเลือก`,
+      promoText: promoV ? promotionBadgeText(promoV) : null, groupName: item.groupName,
+    };
+  });
+  const shownItems = displayItems
+    .filter((it) => !hideOutOfStock || it.available)
+    .sort((a, b) => {
+      if (sortMode === "price_asc") return a.minPrice - b.minPrice;
+      if (sortMode === "price_desc") return b.maxPrice - a.maxPrice;
+      if (sortMode === "name") return a.name.localeCompare(b.name, "th");
+      if (a.available !== b.available) return a.available ? -1 : 1;
+      if (!!a.promoText !== !!b.promoText) return a.promoText ? -1 : 1;
+      if (!!a.image !== !!b.image) return a.image ? -1 : 1;
+      return 0;
+    });
+  const availableCount = displayItems.filter((it) => it.available).length;
+  const hiddenCount = displayItems.length - displayItems.filter((it) => it.available).length;
+  const initial = shopName.trim().charAt(0) || "ร";
+
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 p-5 text-white">
-        <div>
-          <h1 className="text-xl font-bold">{shopName}</h1>
-          <p className="mt-1 text-sm text-indigo-100">เลือกซื้อสินค้าและสั่งซื้อออนไลน์ได้ทันที</p>
+      {/* แบนเนอร์ร้าน */}
+      <section className="relative mb-5 overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 p-6 text-white shadow-lg shadow-indigo-600/20 sm:p-8">
+        <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/10" />
+        <div className="pointer-events-none absolute -bottom-24 right-32 h-48 w-48 rounded-full bg-white/5" />
+        <div className="relative flex flex-wrap items-center gap-4 sm:gap-5">
+          <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-white text-3xl font-extrabold text-indigo-600 shadow-md sm:h-20 sm:w-20 sm:text-4xl">{initial}</div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl font-extrabold leading-tight sm:text-3xl">{shopName}</h1>
+            <p className="mt-1 text-sm text-indigo-100">เลือกซื้อสินค้าออนไลน์ สั่งง่าย จ่ายสะดวก ติดตามสถานะได้ตลอด</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
+              <span className="rounded-full bg-white/15 px-3 py-1">🛍️ พร้อมขาย {availableCount.toLocaleString("th-TH")} รายการ</span>
+              {promotions.length > 0 && <span className="rounded-full bg-rose-500/90 px-3 py-1">🎁 โปรโมชั่น {promotions.length} รายการ</span>}
+              {shopPhone && <a href={`tel:${shopPhone}`} className="rounded-full bg-white/15 px-3 py-1 hover:bg-white/25">📞 {shopPhone}</a>}
+              {contactEmail && (
+                <a
+                  href={`mailto:${contactEmail}?subject=${encodeURIComponent(`สอบถามสินค้า - ${shopName}`)}`}
+                  className="rounded-full bg-white/15 px-3 py-1 hover:bg-white/25"
+                >
+                  ✉️ อีเมลร้าน
+                </a>
+              )}
+            </div>
+          </div>
         </div>
-        {contactEmail && (
-          <a
-            href={`mailto:${contactEmail}?subject=${encodeURIComponent(`สอบถามสินค้า - ${shopName}`)}&body=${encodeURIComponent("สวัสดีครับ/ค่ะ ผม/ดิฉันสนใจสอบถามเกี่ยวกับสินค้าในร้าน\n\n")}`}
-            className="shrink-0 rounded-lg bg-white/15 px-4 py-2 text-sm font-medium text-white hover:bg-white/25"
+      </section>
+
+      {/* ค้นหา / เรียง / หมวดหมู่ */}
+      <div className="sticky top-14 z-20 -mx-4 mb-4 border-b border-gray-100 bg-gray-50/95 px-4 pb-3 pt-2 backdrop-blur">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <svg className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="ค้นหาสินค้า..."
+              className="w-full rounded-full border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-indigo-400 focus:outline-none"
+            />
+          </div>
+          <select
+            value={sortMode}
+            onChange={(e) => setSortMode(e.target.value as typeof sortMode)}
+            className="rounded-full border border-gray-200 bg-white px-3 py-2.5 text-sm shadow-sm"
           >
-            ✉️ ติดต่อผู้ขาย
-          </a>
+            <option value="recommended">แนะนำ</option>
+            <option value="price_asc">ราคา ต่ำ → สูง</option>
+            <option value="price_desc">ราคา สูง → ต่ำ</option>
+            <option value="name">ชื่อ ก-ฮ</option>
+          </select>
+        </div>
+        <div className="mt-2.5 flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {["all", ...categories].map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCategory(c)}
+              className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                category === c ? "bg-indigo-600 text-white shadow-sm" : "border border-gray-200 bg-white text-gray-600 hover:border-indigo-300"
+              }`}
+            >
+              {c === "all" ? "ทั้งหมด" : c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+        <span>พบ {shownItems.length.toLocaleString("th-TH")} รายการ</span>
+        {hiddenCount > 0 && (
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input type="checkbox" checked={!hideOutOfStock} onChange={(e) => setHideOutOfStock(!e.target.checked)} className="h-3.5 w-3.5" />
+            แสดงสินค้าที่หมดด้วย ({hiddenCount})
+          </label>
         )}
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="ค้นหาสินค้า..."
-          className="min-w-[180px] flex-1 rounded-lg border px-3 py-2 text-sm"
-        />
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="rounded-lg border px-3 py-2 text-sm"
-        >
-          <option value="all">ทุกหมวดหมู่</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2.5 pb-24 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {groupedProducts.map((item) => {
-          if (item.type === "single") {
-            const p = item.product;
-            const inCart = cart.find((c) => c.product_id === p.id);
-            const outOfStock = !p.no_stock_tracking && Number(p.stock_qty) <= 0;
-            const promo = promoMap.get(p.id);
-            return (
-              <div key={p.id} className="group flex flex-col overflow-hidden rounded-md border border-gray-200 bg-white transition-shadow hover:shadow-md">
-                <div
-                  className="relative flex aspect-square items-center justify-center overflow-hidden bg-gray-100"
-                  style={!p.image_url && p.card_color ? { backgroundColor: p.card_color } : undefined}
-                >
-                  {p.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.image_url} alt={p.name} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" />
-                  ) : p.card_color ? null : (
-                    <span className="text-3xl text-gray-300">📦</span>
-                  )}
-                  {promo && (
-                    <span className="absolute left-0 top-0 rounded-br-md bg-[#ee4d2d] px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                      🎁 โปร
-                    </span>
-                  )}
-                  {outOfStock && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                      <span className="rounded bg-black/70 px-2 py-1 text-[11px] font-semibold text-white">สินค้าหมด</span>
-                    </div>
-                  )}
-                </div>
-                <div className="flex flex-1 flex-col p-2">
-                  <p className="line-clamp-2 min-h-[2.4em] text-xs text-gray-800">{p.name}</p>
-                  {promo && (
-                    <p className="mt-0.5 truncate text-[10px] font-medium text-[#ee4d2d]">🎁 {promotionBadgeText(promo)}</p>
-                  )}
-                  <p className="mt-1 text-base font-medium text-[#ee4d2d]">฿{money(p.sell_price)}</p>
-                  <p className="text-[11px] text-gray-400">
-                    {p.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `เหลือ ${p.stock_qty} ${p.unit}`}
-                  </p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        {shownItems.slice(0, visibleCount).map((it) => {
+          const inCart = it.product ? cart.find((c) => c.product_id === it.product!.id) : undefined;
+          const atMax = !!(it.product && inCart && !it.product.no_stock_tracking && inCart.qty >= Number(it.product.stock_qty));
+          const onAdd = () => (it.kind === "single" && it.product ? addToCart(it.product) : setVariantPopupGroup(it.groupName!));
+          return (
+            <div key={it.key} className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+              <button
+                type="button"
+                onClick={onAdd}
+                disabled={!it.available}
+                className="relative block aspect-square w-full overflow-hidden bg-gradient-to-br from-indigo-50 to-violet-100"
+                style={!it.image && it.color ? { background: it.color } : undefined}
+              >
+                {it.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={it.image} alt={it.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                ) : (
+                  <span className="grid h-full w-full place-items-center text-5xl font-extrabold text-indigo-300/80">{it.name.trim().charAt(0)}</span>
+                )}
+                {it.promoText && (
+                  <span className="absolute left-2 top-2 rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white shadow">🎁 โปร</span>
+                )}
+                {it.kind === "group" && it.available && (
+                  <span className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 shadow">{it.stockText}</span>
+                )}
+                {!it.available && (
+                  <span className="absolute inset-0 grid place-items-center bg-white/60">
+                    <span className="rounded-full bg-gray-900/80 px-3 py-1 text-xs font-semibold text-white">สินค้าหมด</span>
+                  </span>
+                )}
+              </button>
+              <div className="flex flex-1 flex-col p-3">
+                <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-gray-800">{it.name}</p>
+                {it.promoText && <p className="mt-1 truncate text-[11px] font-semibold text-rose-600">{it.promoText}</p>}
+                <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-lg font-extrabold text-indigo-700">
+                      ฿{money(it.minPrice)}{it.maxPrice !== it.minPrice && <span className="text-sm font-semibold"> - {money(it.maxPrice)}</span>}
+                    </p>
+                    {it.kind === "single" && <p className="text-[11px] text-gray-400">{it.stockText}</p>}
+                  </div>
                   <button
-                    onClick={() => addToCart(p)}
-                    disabled={outOfStock || (inCart && !p.no_stock_tracking ? inCart.qty >= Number(p.stock_qty) : false)}
-                    className="mt-2 w-full rounded-sm bg-[#ee4d2d] py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#d73211] disabled:bg-gray-300"
+                    type="button"
+                    onClick={onAdd}
+                    disabled={!it.available || atMax}
+                    aria-label="หยิบใส่ตะกร้า"
+                    className={`grid h-10 min-w-10 shrink-0 place-items-center rounded-full px-2 text-sm font-bold text-white shadow-md transition disabled:bg-gray-300 disabled:shadow-none ${
+                      inCart ? "bg-emerald-500 hover:bg-emerald-600" : "bg-indigo-600 hover:bg-indigo-700"
+                    }`}
                   >
-                    {inCart ? `ในตะกร้า (${inCart.qty})` : "หยิบใส่ตะกร้า"}
+                    {inCart ? `✓ ${inCart.qty}` : <span className="text-xl leading-none">+</span>}
                   </button>
                 </div>
-              </div>
-            );
-          }
-
-          const { groupName, variants } = item;
-          const first = variants[0];
-          const prices = variants.map((v) => Number(v.sell_price));
-          const minPrice = Math.min(...prices);
-          const maxPrice = Math.max(...prices);
-          const totalStock = variants.reduce((s, v) => s + Number(v.stock_qty), 0);
-          const anyAlwaysAvailable = variants.some((v) => v.no_stock_tracking);
-          return (
-            <div key={`group-${groupName}`} className="group flex flex-col overflow-hidden rounded-md border border-gray-200 bg-white transition-shadow hover:shadow-md">
-              <div
-                className="relative flex aspect-square items-center justify-center overflow-hidden bg-gray-100"
-                style={!first.image_url && first.card_color ? { backgroundColor: first.card_color } : undefined}
-              >
-                {first.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={first.image_url} alt={groupName} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" />
-                ) : first.card_color ? null : (
-                  <span className="text-3xl text-gray-300">📦</span>
-                )}
-                {totalStock <= 0 && !anyAlwaysAvailable && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                    <span className="rounded bg-black/70 px-2 py-1 text-[11px] font-semibold text-white">สินค้าหมด</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex flex-1 flex-col p-2">
-                <p className="line-clamp-2 min-h-[2.4em] text-xs text-gray-800">{groupName}</p>
-                <p className="mt-1 text-base font-medium text-[#ee4d2d]">
-                  {minPrice === maxPrice ? `฿${money(minPrice)}` : `฿${money(minPrice)} - ฿${money(maxPrice)}`}
-                </p>
-                <p className="text-[11px] text-gray-400">
-                  {totalStock <= 0 && !anyAlwaysAvailable ? "สินค้าหมด" : `${variants.length} ตัวเลือก · เหลือรวม ${totalStock}`}
-                </p>
-                <button
-                  onClick={() => setVariantPopupGroup(groupName)}
-                  disabled={!anyAlwaysAvailable && totalStock <= 0}
-                  className="mt-2 w-full rounded-sm bg-[#ee4d2d] py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#d73211] disabled:bg-gray-300"
-                >
-                  เลือกตัวเลือก
-                </button>
               </div>
             </div>
           );
         })}
-        {groupedProducts.length === 0 && (
-          <p className="col-span-full py-10 text-center text-sm text-gray-400">ไม่พบสินค้า</p>
+        {shownItems.length === 0 && (
+          <div className="col-span-full rounded-2xl bg-white py-14 text-center text-sm text-gray-400 shadow-sm">ไม่พบสินค้าที่ค้นหา</div>
         )}
       </div>
+      {shownItems.length > visibleCount && (
+        <div className="mt-5 text-center">
+          <button
+            type="button"
+            onClick={() => setVisibleCount((n) => n + PAGE)}
+            className="rounded-full border border-indigo-200 bg-white px-6 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
+          >
+            ดูสินค้าเพิ่มเติม ({(shownItems.length - visibleCount).toLocaleString("th-TH")})
+          </button>
+        </div>
+      )}
+      <div className="h-24" />
 
       {variantPopupGroup && (
         <div
@@ -768,14 +843,14 @@ export default function ShopClient({
                     </div>
                     <div className="flex flex-1 flex-col p-2">
                       <p className="text-xs text-gray-800">{v.variant_label || v.name}</p>
-                      <p className="mt-1 text-base font-medium text-[#ee4d2d]">฿{money(v.sell_price)}</p>
+                      <p className="mt-1 text-base font-medium text-indigo-700">฿{money(v.sell_price)}</p>
                       <p className="text-[11px] text-gray-400">
                         {v.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `เหลือ ${v.stock_qty} ${v.unit}`}
                       </p>
                       <button
                         onClick={() => addToCart(v)}
                         disabled={outOfStock || (inCart && !v.no_stock_tracking ? inCart.qty >= Number(v.stock_qty) : false)}
-                        className="mt-2 w-full rounded-sm bg-[#ee4d2d] py-1.5 text-xs font-medium text-white transition-colors hover:bg-[#d73211] disabled:bg-gray-300"
+                        className="mt-2 w-full rounded-sm bg-indigo-600 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-700 disabled:bg-gray-300"
                       >
                         {inCart ? `ในตะกร้า (${inCart.qty})` : "หยิบใส่ตะกร้า"}
                       </button>
@@ -794,9 +869,10 @@ export default function ShopClient({
       {cartCount > 0 && (
         <button
           onClick={() => setView("cart")}
-          className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full bg-indigo-600 px-6 py-3 text-sm font-medium text-white shadow-lg"
+          className="fixed bottom-4 left-4 z-40 flex items-center gap-3 rounded-full bg-gray-900 py-3 pl-4 pr-5 text-sm font-semibold text-white shadow-xl sm:left-1/2 sm:-translate-x-1/2"
         >
-          🛒 ตะกร้า ({cartCount}) · {money(netCartTotal)} บาท
+          <span className="grid h-7 min-w-7 place-items-center rounded-full bg-white px-1.5 text-xs font-bold text-gray-900">{cartCount}</span>
+          ดูตะกร้า · ฿{money(netCartTotal)}
         </button>
       )}
     </div>

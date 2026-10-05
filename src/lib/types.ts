@@ -408,6 +408,8 @@ export interface ShopSettings {
   show_vat_on_receipt: boolean;
   promptpay_id: string | null;
   contact_email: string | null;
+  receipt_footer_text?: string | null;
+  receipt_qr_url?: string | null;
   updated_at: string;
 }
 

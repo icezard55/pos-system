@@ -7,9 +7,11 @@ import type { ShopSettings } from "@/lib/types";
 export default function SettingsClient({
   initialSettings,
   shopSlug,
+  shopId,
 }: {
   initialSettings: ShopSettings | null;
   shopSlug: string | null;
+  shopId: string;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -40,6 +42,30 @@ export default function SettingsClient({
   const [showVat, setShowVat] = useState(initialSettings?.show_vat_on_receipt ?? true);
   const [promptpayId, setPromptpayId] = useState(initialSettings?.promptpay_id ?? "");
   const [contactEmail, setContactEmail] = useState(initialSettings?.contact_email ?? "");
+  const [receiptFooter, setReceiptFooter] = useState(initialSettings?.receipt_footer_text ?? "");
+  const [receiptQrUrl, setReceiptQrUrl] = useState(initialSettings?.receipt_qr_url ?? "");
+  const [qrUploading, setQrUploading] = useState(false);
+
+  async function handleQrUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setQrUploading(true);
+    setError(null);
+    try {
+      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      const path = `${shopId}/receipt/qr-${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("shop-uploads").upload(path, file, { cacheControl: "31536000", upsert: false });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from("shop-uploads").getPublicUrl(path);
+      setReceiptQrUrl(pub.publicUrl);
+      setSuccess("อัปโหลดรูป QR แล้ว — กด \"บันทึก\" ด้านล่างเพื่อใช้งาน");
+    } catch (err: any) {
+      setError(`อัปโหลดรูป QR ไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setQrUploading(false);
+    }
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -64,6 +90,11 @@ export default function SettingsClient({
         p_contact_email: contactEmail.trim() || null,
       });
       if (error) throw error;
+      const { error: rxErr } = await supabase.rpc("update_receipt_extras", {
+        p_footer_text: receiptFooter,
+        p_qr_url: receiptQrUrl,
+      });
+      if (rxErr) throw rxErr;
       setSuccess("บันทึกข้อมูลร้านสำเร็จ");
       router.refresh();
     } catch (err: any) {
@@ -155,6 +186,41 @@ export default function SettingsClient({
           <p className="mt-1 text-xs text-gray-400">
             ถ้าปิด ใบเสร็จจะไม่แสดงบรรทัดแยก VAT 7% ให้ลูกค้าเห็น (แต่ระบบยังคำนวณ VAT เก็บไว้ในฐานข้อมูลตามปกติ)
           </p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">ข้อความท้ายใบเสร็จ</label>
+          <textarea
+            value={receiptFooter}
+            onChange={(e) => setReceiptFooter(e.target.value)}
+            maxLength={500}
+            rows={3}
+            placeholder={"เช่น ขอบคุณที่ใช้บริการ\nสินค้าซื้อแล้วเปลี่ยนได้ภายใน 7 วัน\nติดตามโปรโมชั่นได้ที่ LINE @yourshop"}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-brand focus:outline-none"
+          />
+          <p className="mt-1 text-xs text-gray-400">ขึ้นบรรทัดใหม่ได้ ถ้าเว้นว่างจะแสดง &quot;ขอบคุณที่ใช้บริการ&quot;</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">QR code ร้าน (แสดงท้ายใบเสร็จ)</label>
+          <div className="flex items-center gap-4">
+            {receiptQrUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={receiptQrUrl} alt="QR ร้าน" className="h-28 w-28 rounded-lg border object-contain p-1" />
+            ) : (
+              <div className="grid h-28 w-28 place-items-center rounded-lg border-2 border-dashed text-xs text-gray-400">ยังไม่มี QR</div>
+            )}
+            <div className="flex flex-col gap-2">
+              <label className={`cursor-pointer rounded-lg border px-3 py-1.5 text-center text-sm hover:bg-gray-50 ${qrUploading ? "pointer-events-none opacity-50" : ""}`}>
+                {qrUploading ? "กำลังอัปโหลด..." : receiptQrUrl ? "เปลี่ยนรูป QR" : "อัปโหลดรูป QR"}
+                <input type="file" accept="image/*" className="hidden" onChange={handleQrUpload} />
+              </label>
+              {receiptQrUrl && (
+                <button type="button" onClick={() => setReceiptQrUrl("")} className="text-sm text-red-500 hover:underline">
+                  เอา QR ออก
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="mt-1 text-xs text-gray-400">เช่น QR LINE OA / Facebook / ร้านค้าออนไลน์ — ใช้รูป PNG หรือ JPG ที่ครอปเฉพาะตัว QR จะคมชัดที่สุด</p>
         </div>
 
         <h2 className="mt-2 font-semibold text-gray-800">รับชำระเงินผ่าน QR พร้อมเพย์</h2>

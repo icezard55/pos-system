@@ -13,5 +13,5 @@ export default async function SettingsPage() {
   const { data: settings } = await supabase.from("shop_settings").select("*").maybeSingle();
   const { data: shop } = await supabase.from("shops").select("slug").eq("id", profile.shop_id).maybeSingle();
 
-  return <SettingsClient initialSettings={settings} shopSlug={shop?.slug ?? null} />;
+  return <SettingsClient initialSettings={settings} shopSlug={shop?.slug ?? null} shopId={profile.shop_id ?? ""} />;
 }

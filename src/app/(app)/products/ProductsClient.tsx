@@ -21,7 +21,7 @@ function emptyForm() {
     id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0",
     low_stock_threshold: "5", image_url: "", variant_group: "", variant_label: "",
     storage_location: "", no_stock_tracking: false, card_color: "", receipt_name: "", sort_order: "0",
-    expiry_date: "", wholesale_price: "",
+    expiry_date: "", wholesale_price: "", member_price: "",
   };
 }
 
@@ -129,6 +129,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
       storage_location: p.storage_location ?? "", no_stock_tracking: p.no_stock_tracking ?? false,
       card_color: p.card_color ?? "", receipt_name: p.receipt_name ?? "", sort_order: String(p.sort_order ?? 0),
       expiry_date: p.expiry_date ?? "", wholesale_price: p.wholesale_price != null ? String(p.wholesale_price) : "",
+      member_price: p.member_price != null ? String(p.member_price) : "",
     });
     setAddingCategory(false);
     setNewCategory("");
@@ -295,6 +296,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
           sort_order: Number(form.sort_order) || 0,
           expiry_date: form.expiry_date || null,
           wholesale_price: form.wholesale_price.trim() ? Number(form.wholesale_price) : null,
+          member_price: form.member_price.trim() ? Number(form.member_price) : null,
           is_active: v.active,
         }));
         const { error } = await supabase.from("products").insert(rows);
@@ -329,6 +331,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
       sort_order: Number(form.sort_order) || 0,
       expiry_date: form.expiry_date || null,
       wholesale_price: form.wholesale_price.trim() ? Number(form.wholesale_price) : null,
+          member_price: form.member_price.trim() ? Number(form.member_price) : null,
     };
     try {
       let productId = form.id;
@@ -545,6 +548,11 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                   {p.wholesale_price != null && (
                     <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-normal text-sky-600">
                       ส่ง {Number(p.wholesale_price).toLocaleString("th-TH")}
+                    </span>
+                  )}
+                  {p.member_price != null && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-normal text-emerald-700">
+                      สมาชิก {Number(p.member_price).toLocaleString("th-TH")}
                     </span>
                   )}
                 </td>
@@ -879,6 +887,18 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                   onChange={(e) => setForm({ ...form, wholesale_price: e.target.value })}
                 />
                 <p className="mt-1 text-[11px] text-gray-400">ใช้อัตโนมัติเมื่อขายให้ลูกค้าประเภท "ลูกค้าส่ง"</p>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-600">ราคาสมาชิก (ไม่บังคับ)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="ถ้าไม่กรอกจะใช้ราคาขายปกติ"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  value={form.member_price}
+                  onChange={(e) => setForm({ ...form, member_price: e.target.value })}
+                />
+                <p className="mt-1 text-[11px] text-gray-400">ใช้เมื่อขายหน้าร้านแบบเลือกลูกค้า/สมาชิก และในร้านออนไลน์เมื่อเบอร์ตรงกับสมาชิก</p>
               </div>
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-medium text-gray-600">ชื่อแยกสำหรับใบเสร็จ (ไม่บังคับ)</label>

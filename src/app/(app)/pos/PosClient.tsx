@@ -132,8 +132,12 @@ export default function PosClient({
   }, [products, barcodes]);
 
   const isWholesale = selectedCustomer?.customer_type === "wholesale";
+  // ลำดับราคา (ต้องตรงกับ create_sale ฝั่งฐานข้อมูล): ขายส่ง > สมาชิก (เลือกลูกค้าแล้ว) > ราคาปกติ
+  const isMember = !!selectedCustomer && !isWholesale;
   function effectivePrice(p: Product) {
-    return isWholesale && p.wholesale_price != null ? Number(p.wholesale_price) : Number(p.sell_price);
+    if (isWholesale && p.wholesale_price != null) return Number(p.wholesale_price);
+    if (selectedCustomer && p.member_price != null) return Number(p.member_price);
+    return Number(p.sell_price);
   }
   function expiryBadge(p: Product) {
     if (!p.expiry_date) return null;
@@ -656,6 +660,7 @@ export default function PosClient({
                   <p className="mt-1 font-bold text-brand">
                     ฿{effectivePrice(p).toLocaleString("th-TH")}
                     {isWholesale && p.wholesale_price != null && <span className="ml-1 text-[10px] font-normal text-sky-600">ราคาส่ง</span>}
+                    {isMember && p.member_price != null && <span className="ml-1 text-[10px] font-normal text-emerald-600">ราคาสมาชิก</span>}
                   </p>
                 </button>
               );
@@ -1004,6 +1009,9 @@ export default function PosClient({
           )}
           {isWholesale && (
             <p className="text-[11px] text-sky-600">ลูกค้าประเภทลูกค้าส่ง — ระบบใช้ราคาขายส่งอัตโนมัติสำหรับสินค้าที่ตั้งราคาส่งไว้</p>
+          )}
+          {isMember && (
+            <p className="text-[11px] text-emerald-600">ลูกค้าสมาชิก — ระบบใช้ราคาสมาชิกอัตโนมัติสำหรับสินค้าที่ตั้งราคาสมาชิกไว้</p>
           )}
 
           <button

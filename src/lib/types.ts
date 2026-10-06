@@ -28,6 +28,7 @@ export interface Product {
   sort_order: number;
   expiry_date: string | null;
   wholesale_price: number | null;
+  member_price?: number | null;
 }
 
 export interface Promotion {
@@ -43,6 +44,7 @@ export interface Promotion {
   note: string | null;
   created_by: string | null;
   created_at: string;
+  image_url?: string | null;
 }
 
 export interface ActivePromotion {
@@ -165,6 +167,9 @@ export interface DiscountCode {
   note: string | null;
   created_by: string | null;
   created_at: string;
+  show_on_storefront?: boolean;
+  image_url?: string | null;
+  public_description?: string | null;
 }
 
 export const SALE_PAYMENT_STATUS_LABEL: Record<"unpaid" | "paid", string> = {
@@ -410,6 +415,7 @@ export interface ShopSettings {
   contact_email: string | null;
   receipt_footer_text?: string | null;
   receipt_qr_url?: string | null;
+  storefront_theme?: string | null;
   updated_at: string;
 }
 
@@ -467,6 +473,7 @@ export interface StorefrontProduct {
   variant_label: string | null;
   card_color: string | null;
   no_stock_tracking: boolean;
+  member_price?: number | null;
 }
 
 export type OnlineOrderDeliveryMethod = "delivery" | "pickup";
@@ -543,4 +550,5 @@ export interface CartItem {
   stock_qty: number;
   qty: number;
   no_stock_tracking?: boolean;
+  member_price?: number | null;
 }

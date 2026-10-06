@@ -26,19 +26,19 @@ function OrderCard({ result, defaultOpen }: { result: LookupResult; defaultOpen:
   const isCancelled = result.status === "cancelled";
 
   return (
-    <div className="rounded-2xl bg-white p-4 shadow-sm">
+    <div className="rounded-2xl bg-sf-surface p-4 shadow-sm">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between text-left"
       >
         <div>
-          <span className="font-bold text-gray-800">{result.order_no}</span>
-          <span className="ml-2 text-xs text-gray-400">{new Date(result.created_at).toLocaleDateString("th-TH")}</span>
+          <span className="font-bold text-sf-ink">{result.order_no}</span>
+          <span className="ml-2 text-xs text-sf-muted">{new Date(result.created_at).toLocaleDateString("th-TH")}</span>
         </div>
         <span
           className={`rounded-full px-2.5 py-1 text-xs font-medium ${
-            isCancelled ? "bg-red-100 text-red-700" : "bg-indigo-100 text-indigo-700"
+            isCancelled ? "bg-red-100 text-red-700" : "bg-sf-soft text-sf-primary"
           }`}
         >
           {ONLINE_ORDER_STATUS_LABEL[result.status]}
@@ -53,18 +53,18 @@ function OrderCard({ result, defaultOpen }: { result: LookupResult; defaultOpen:
                 <div key={s} className="flex flex-1 items-center last:flex-none">
                   <div
                     className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${
-                      i <= stepIndex ? "bg-indigo-600" : "bg-gray-200"
+                      i <= stepIndex ? "bg-sf-primary" : "bg-sf-line"
                     }`}
                   />
                   {i < STATUS_STEPS.length - 1 && (
-                    <div className={`h-0.5 flex-1 ${i < stepIndex ? "bg-indigo-600" : "bg-gray-200"}`} />
+                    <div className={`h-0.5 flex-1 ${i < stepIndex ? "bg-sf-primary" : "bg-sf-line"}`} />
                   )}
                 </div>
               ))}
             </div>
           )}
 
-          <div className="space-y-1 text-xs text-gray-500">
+          <div className="space-y-1 text-xs text-sf-muted">
             <p>วิธีรับสินค้า: {ONLINE_ORDER_DELIVERY_LABEL[result.delivery_method]}</p>
             <p>วิธีชำระเงิน: {ONLINE_ORDER_PAYMENT_LABEL[result.payment_method]}</p>
             <p>วันที่สั่งซื้อ: {new Date(result.created_at).toLocaleString("th-TH")}</p>
@@ -73,14 +73,14 @@ function OrderCard({ result, defaultOpen }: { result: LookupResult; defaultOpen:
           <div className="mt-3 divide-y border-t">
             {(result.items ?? []).map((it, idx) => (
               <div key={idx} className="flex justify-between py-1.5 text-sm">
-                <span className="text-gray-700">
+                <span className="text-sf-ink">
                   {it.product_name} × {it.qty}
                 </span>
-                <span className="text-gray-600">{money(it.line_total)} บาท</span>
+                <span className="text-sf-muted">{money(it.line_total)} บาท</span>
               </div>
             ))}
           </div>
-          <div className="mt-2 flex justify-between border-t pt-2 text-sm font-bold text-gray-800">
+          <div className="mt-2 flex justify-between border-t pt-2 text-sm font-bold text-sf-ink">
             <span>ยอดรวม</span>
             <span>{money(result.total)} บาท</span>
           </div>
@@ -135,10 +135,10 @@ export default function TrackClient({ shopId, initialOrderNo, initialPhone }: { 
 
   return (
     <div className="mx-auto max-w-md">
-      <h2 className="mb-3 text-lg font-bold text-gray-800">ติดตามคำสั่งซื้อ</h2>
-      <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+      <h2 className="mb-3 text-lg font-bold text-sf-ink">ติดตามคำสั่งซื้อ</h2>
+      <form onSubmit={handleSubmit} className="space-y-3 rounded-2xl bg-sf-surface p-4 shadow-sm">
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-600">เบอร์โทรศัพท์</label>
+          <label className="mb-1 block text-xs font-medium text-sf-muted">เบอร์โทรศัพท์</label>
           <input
             required
             value={phone}
@@ -148,13 +148,13 @@ export default function TrackClient({ shopId, initialOrderNo, initialPhone }: { 
           />
         </div>
         {initialOrderNo && (
-          <p className="text-xs text-gray-400">เลขที่คำสั่งซื้อ: {initialOrderNo} (ระบบจะแสดงคำสั่งซื้อทั้งหมดของเบอร์นี้)</p>
+          <p className="text-xs text-sf-muted">เลขที่คำสั่งซื้อ: {initialOrderNo} (ระบบจะแสดงคำสั่งซื้อทั้งหมดของเบอร์นี้)</p>
         )}
         {err && <p className="text-xs text-red-600">{err}</p>}
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+          className="w-full rounded-lg bg-sf-primary py-2.5 text-sm font-medium text-sf-on-primary disabled:opacity-50"
         >
           {loading ? "กำลังค้นหา..." : "ตรวจสอบสถานะ"}
         </button>

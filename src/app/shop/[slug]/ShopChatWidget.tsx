@@ -144,7 +144,7 @@ export default function ShopChatWidget({ shopId, shopName }: { shopId: string; s
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="fixed bottom-20 right-4 z-40 flex items-center gap-2 rounded-full bg-indigo-600 py-3 pl-4 pr-5 text-sm font-semibold text-white shadow-xl shadow-indigo-600/30 transition hover:bg-indigo-700 sm:bottom-6"
+          className="fixed bottom-20 right-4 z-40 flex items-center gap-2 rounded-full bg-sf-primary py-3 pl-4 pr-5 text-sm font-semibold text-sf-on-primary shadow-xl shadow-sf-primary/30 transition hover:bg-sf-primary-dark sm:bottom-6"
           aria-label="แชทกับร้าน"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>
@@ -156,31 +156,31 @@ export default function ShopChatWidget({ shopId, shopName }: { shopId: string; s
       )}
 
       {open && (
-        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[85vh] flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:inset-x-auto sm:bottom-6 sm:right-6 sm:h-[560px] sm:w-[380px] sm:rounded-2xl">
-          <div className="flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-3 text-white">
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-white/20 text-lg font-bold">{shopName.trim().charAt(0) || "ร"}</div>
+        <div className="fixed inset-x-0 bottom-0 z-50 flex h-[85vh] flex-col overflow-hidden rounded-t-2xl bg-sf-surface shadow-2xl sm:inset-x-auto sm:bottom-6 sm:right-6 sm:h-[560px] sm:w-[380px] sm:rounded-2xl">
+          <div className="flex items-center gap-3 bg-sf-hero px-4 py-3 text-sf-hero-ink">
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-sf-hero-ink/20 text-lg font-bold">{shopName.trim().charAt(0) || "ร"}</div>
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold">{shopName}</p>
-              <p className="text-xs text-indigo-100">ปกติร้านจะตอบกลับภายในเวลาทำการ</p>
+              <p className="text-xs text-sf-hero-ink/80">ปกติร้านจะตอบกลับภายในเวลาทำการ</p>
             </div>
-            <button type="button" onClick={() => setOpen(false)} className="rounded-full p-1.5 text-2xl leading-none text-white/80 hover:bg-white/10" aria-label="ปิดแชท">×</button>
+            <button type="button" onClick={() => setOpen(false)} className="rounded-full p-1.5 text-2xl leading-none text-sf-hero-ink/80 hover:bg-sf-hero-ink/10" aria-label="ปิดแชท">×</button>
           </div>
 
-          <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-50 px-3 py-4">
-            <div className="mx-auto max-w-[85%] rounded-2xl bg-white px-4 py-3 text-center text-sm text-gray-600 shadow-sm">
+          <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto bg-sf-bg px-3 py-4">
+            <div className="mx-auto max-w-[85%] rounded-2xl bg-sf-surface px-4 py-3 text-center text-sm text-sf-muted shadow-sm">
               สวัสดีครับ/ค่ะ 👋 สอบถามสินค้า ราคา หรือการจัดส่งได้เลย
             </div>
             {messages.map((m) => (
               <div key={m.id} className={`flex ${m.sender === "customer" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm shadow-sm ${m.sender === "customer" ? "rounded-br-md bg-indigo-600 text-white" : "rounded-bl-md bg-white text-gray-800"}`}>
+                <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm shadow-sm ${m.sender === "customer" ? "rounded-br-md bg-sf-primary text-sf-on-primary" : "rounded-bl-md bg-sf-surface text-sf-ink"}`}>
                   <p className="whitespace-pre-wrap break-words">{m.body}</p>
-                  <p className={`mt-0.5 text-right text-[10px] ${m.sender === "customer" ? "text-indigo-200" : "text-gray-400"}`}>{timeLabel(m.created_at)}</p>
+                  <p className={`mt-0.5 text-right text-[10px] ${m.sender === "customer" ? "text-sf-on-primary/70" : "text-sf-muted"}`}>{timeLabel(m.created_at)}</p>
                 </div>
               </div>
             ))}
           </div>
 
-          <form onSubmit={handleSend} className="space-y-2 border-t bg-white p-3">
+          <form onSubmit={handleSend} className="space-y-2 border-t bg-sf-surface p-3">
             {!token && (
               <div className="grid grid-cols-2 gap-2">
                 <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="ชื่อของคุณ *" className="rounded-lg border px-3 py-2 text-sm" />
@@ -201,9 +201,9 @@ export default function ShopChatWidget({ shopId, shopName }: { shopId: string; s
                 rows={1}
                 maxLength={1000}
                 placeholder="พิมพ์ข้อความ..."
-                className="max-h-28 min-h-[42px] flex-1 resize-none rounded-xl border px-3 py-2.5 text-sm focus:border-indigo-500 focus:outline-none"
+                className="max-h-28 min-h-[42px] flex-1 resize-none rounded-xl border px-3 py-2.5 text-sm focus:border-sf-primary focus:outline-none"
               />
-              <button type="submit" disabled={sending || !input.trim()} className="h-[42px] rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white disabled:opacity-40">
+              <button type="submit" disabled={sending || !input.trim()} className="h-[42px] rounded-xl bg-sf-primary px-4 text-sm font-semibold text-sf-on-primary disabled:opacity-40">
                 {sending ? "..." : "ส่ง"}
               </button>
             </div>

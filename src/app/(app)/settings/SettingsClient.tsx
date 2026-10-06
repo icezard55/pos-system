@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { ShopSettings } from "@/lib/types";
+import { STOREFRONT_THEMES, storefrontThemeStyle } from "@/lib/storefrontThemes";
 
 export default function SettingsClient({
   initialSettings,
@@ -45,6 +46,20 @@ export default function SettingsClient({
   const [receiptFooter, setReceiptFooter] = useState(initialSettings?.receipt_footer_text ?? "");
   const [receiptQrUrl, setReceiptQrUrl] = useState(initialSettings?.receipt_qr_url ?? "");
   const [qrUploading, setQrUploading] = useState(false);
+  const [theme, setTheme] = useState(initialSettings?.storefront_theme ?? "modern");
+  const [themeSaving, setThemeSaving] = useState<string | null>(null);
+  const [themeMsg, setThemeMsg] = useState<string | null>(null);
+
+  async function chooseTheme(id: string) {
+    if (id === theme || themeSaving) return;
+    setThemeSaving(id);
+    setThemeMsg(null);
+    const { error } = await supabase.rpc("set_storefront_theme", { p_theme: id });
+    setThemeSaving(null);
+    if (error) { setThemeMsg(`เปลี่ยนธีมไม่สำเร็จ: ${error.message}`); return; }
+    setTheme(id);
+    setThemeMsg("เปลี่ยนธีมแล้ว — เปิดดูหน้าร้านได้เลย");
+  }
 
   async function handleQrUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -137,6 +152,64 @@ export default function SettingsClient({
           </div>
         </div>
       )}
+
+      <div className="mb-8 rounded-2xl bg-white p-6 shadow-sm">
+        <h2 className="mb-1 font-semibold text-gray-800">ธีมหน้าร้านค้าออนไลน์</h2>
+        <p className="mb-4 text-xs text-gray-400">เลือกหน้าตาร้านค้าออนไลน์ — กดแล้วเปลี่ยนทันที ลูกค้าจะเห็นธีมใหม่เมื่อเปิดหน้าร้าน</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          {STOREFRONT_THEMES.map((t) => {
+            const active = t.id === theme;
+            return (
+              <div
+                key={t.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => chooseTheme(t.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); chooseTheme(t.id); } }}
+                className={`cursor-pointer overflow-hidden rounded-xl border-2 text-left transition ${active ? "border-brand ring-2 ring-brand/30" : "border-gray-200 hover:border-gray-400"}`}
+              >
+                <div style={storefrontThemeStyle(t)} className="bg-sf-bg p-2">
+                  <div className={`rounded-sf bg-sf-hero px-2 py-3 text-sf-hero-ink ${t.layout.heroAlign === "center" ? "text-center" : ""}`}>
+                    <p className={`text-[11px] font-extrabold ${t.layout.upperTitle ? "uppercase tracking-widest" : ""}`}>ร้านของคุณ</p>
+                    <p className="text-[9px] opacity-80">สั่งง่าย จ่ายสะดวก</p>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
+                    {[0, 1, 2].map((i) => (
+                      <div key={i} className={`overflow-hidden rounded-sf bg-sf-surface ${t.layout.cardStyle === "border" ? "border" : t.layout.cardStyle === "shadow" ? "shadow-sm" : ""}`}>
+                        <div className={`bg-sf-soft ${t.layout.imageAspect === "portrait" ? "h-9" : "h-7"}`} />
+                        <div className="flex items-center justify-between p-1">
+                          <span className="text-[8px] font-bold text-sf-price">฿99</span>
+                          <span className="h-2.5 w-2.5 rounded-sf-btn bg-sf-primary" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="p-3">
+                  <p className="flex items-center gap-1.5 text-sm font-semibold text-gray-800">
+                    {t.label}
+                    {active && <span className="rounded bg-brand px-1.5 py-0.5 text-[10px] font-medium text-white">ใช้อยู่</span>}
+                    {themeSaving === t.id && <span className="text-[10px] font-normal text-gray-400">กำลังบันทึก...</span>}
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{t.description}</p>
+                  {storeUrl && (
+                    <a
+                      href={`${storeUrl}?theme=${t.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-1 inline-block text-[11px] font-medium text-brand hover:underline"
+                    >
+                      ดูตัวอย่าง ↗
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {themeMsg && <p className="mt-3 text-sm text-green-600">{themeMsg}</p>}
+      </div>
 
       <form onSubmit={handleSave} className="mb-8 grid gap-4 rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="font-semibold text-gray-800">ข้อมูลร้าน (ใช้แสดงบนใบเสร็จ/ใบกำกับภาษี)</h2>

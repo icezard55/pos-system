@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import StorefrontShowcaseEditor from "@/components/StorefrontShowcaseEditor";
 import type { Promotion } from "@/lib/types";
 import { promotionBadgeText } from "@/lib/types";
 
@@ -263,6 +264,7 @@ export default function PromotionsClient({
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-3">
+                      <StorefrontShowcaseEditor kind="promotion" id={p.id} shopId={shopId} imageUrl={p.image_url ?? null} />
                       <button onClick={() => toggleActive(p)} className="text-xs font-medium text-brand hover:underline">
                         {p.is_active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
                       </button>

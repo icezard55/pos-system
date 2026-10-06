@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import StorefrontShowcaseEditor from "@/components/StorefrontShowcaseEditor";
 import type { DiscountCode, DiscountType } from "@/lib/types";
 import { DISCOUNT_TYPE_LABEL } from "@/lib/types";
 
@@ -276,6 +277,7 @@ export default function DiscountCodesClient({ codes, shopId }: { codes: Discount
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-3">
+                      <StorefrontShowcaseEditor kind="code" id={c.id} shopId={shopId} imageUrl={c.image_url ?? null} showOnStorefront={c.show_on_storefront} description={c.public_description} />
                       <button onClick={() => toggleActive(c)} className="text-xs font-medium text-brand hover:underline">
                         {c.is_active ? "ปิดใช้งาน" : "เปิดใช้งาน"}
                       </button>

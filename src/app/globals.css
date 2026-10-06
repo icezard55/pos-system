@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  /* หน้าร้านค้าออนไลน์: เส้นขอบ/placeholder ตามสีธีม */
+  .sf-root *, .sf-root ::before, .sf-root ::after { border-color: rgb(var(--sf-line)); }
+  .sf-root input::placeholder, .sf-root textarea::placeholder { color: rgb(var(--sf-muted) / 0.8); }
+  .sf-root input, .sf-root textarea, .sf-root select { background-color: rgb(var(--sf-surface)); color: rgb(var(--sf-ink)); }
+}
+
 body {
   background: #f5f6fa;
 }

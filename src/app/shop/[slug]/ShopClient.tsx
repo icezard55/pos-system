@@ -9,6 +9,8 @@ import type {
   OnlineOrderPaymentMethod,
 } from "@/lib/types";
 import { ONLINE_ORDER_PAYMENT_LABEL, ONLINE_ORDER_DELIVERY_LABEL, promotionBadgeText } from "@/lib/types";
+import Link from "next/link";
+import { getStorefrontTheme } from "@/lib/storefrontThemes";
 
 const CART_KEY = "shop_cart_v1";
 
@@ -41,6 +43,8 @@ export default function ShopClient({
   promotions = [],
   contactEmail = null,
   shopPhone = null,
+  themeId = "modern",
+  dealsCount = 0,
 }: {
   shopId: string;
   shopSlug: string;
@@ -49,7 +53,13 @@ export default function ShopClient({
   promotions?: ActivePromotion[];
   contactEmail?: string | null;
   shopPhone?: string | null;
+  themeId?: string;
+  dealsCount?: number;
 }) {
+  const [previewThemeId, setPreviewThemeId] = useState<string | null>(null);
+  useEffect(() => { setPreviewThemeId(new URLSearchParams(window.location.search).get("theme")); }, []);
+  const theme = getStorefrontTheme(previewThemeId ?? themeId);
+  const L = theme.layout;
   const supabase = createClient();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [view, setView] = useState<View>("browse");
@@ -86,6 +96,8 @@ export default function ShopClient({
 
   useEffect(() => {
     setCart(loadCart());
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q) setSearch(q);
   }, []);
 
   const categories = useMemo(() => {
@@ -153,8 +165,31 @@ export default function ShopClient({
     return cycles * promo.get_qty * c.sell_price * (promo.get_discount_pct / 100);
   }
 
-  const cartTotal = cart.reduce((s, c) => s + c.sell_price * c.qty, 0);
-  const promoDiscountTotal = cart.reduce((s, c) => s + promoDiscountFor(c), 0);
+  // ราคาสมาชิก: ใช้เมื่อเบอร์โทรที่กรอกตรงกับลูกค้า/สมาชิกของร้าน (ระบบหลังบ้านตรวจซ้ำอีกครั้งตอนสั่งซื้อ)
+  const [memberStatus, setMemberStatus] = useState<"unknown" | "checking" | "member" | "not_member">("unknown");
+  const isMember = memberStatus === "member";
+  const memberKey = `poskeng_member_phone_${shopId}`;
+  async function checkMember(phone: string) {
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 9) { setMemberStatus("unknown"); return; }
+    setMemberStatus("checking");
+    const { data } = await supabase.rpc("check_storefront_member", { p_shop_id: shopId, p_phone: phone });
+    const ok = data === true;
+    setMemberStatus(ok ? "member" : "not_member");
+    try { if (ok) window.localStorage.setItem(memberKey, phone); } catch { /* ignore */ }
+  }
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(memberKey);
+      if (saved) { setCustomerPhone((p) => p || saved); checkMember(saved); }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberKey]);
+  const pricedCart = cart.map((c) => (isMember && c.member_price != null ? { ...c, sell_price: Number(c.member_price) } : c));
+  const memberSaving = cart.reduce((s, c) => s + (isMember && c.member_price != null ? (c.sell_price - Number(c.member_price)) * c.qty : 0), 0);
+
+  const cartTotal = pricedCart.reduce((s, c) => s + c.sell_price * c.qty, 0);
+  const promoDiscountTotal = pricedCart.reduce((s, c) => s + promoDiscountFor(c), 0);
   const netCartTotal = Math.max(cartTotal - promoDiscountTotal, 0);
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
   const discountCodeAmount = appliedDiscount?.amount ?? 0;
@@ -216,7 +251,7 @@ export default function ShopClient({
         ...cart,
         {
           product_id: p.id, name: p.name, unit: p.unit, sell_price: Number(p.sell_price), stock_qty: maxQty, qty: 1,
-          no_stock_tracking: p.no_stock_tracking,
+          no_stock_tracking: p.no_stock_tracking, member_price: p.member_price ?? null,
         },
       ]);
     }
@@ -301,16 +336,16 @@ export default function ShopClient({
 
   if (view === "done" && placedOrder) {
     return (
-      <div className="mx-auto max-w-md rounded-2xl bg-white p-6 text-center shadow-sm">
+      <div className="mx-auto max-w-md rounded-2xl bg-sf-surface p-6 text-center shadow-sm">
         <div className="mb-2 text-4xl">✅</div>
-        <h2 className="text-lg font-bold text-gray-800">สั่งซื้อสำเร็จ!</h2>
-        <p className="mt-1 text-sm text-gray-500">เลขที่คำสั่งซื้อ</p>
-        <p className="text-xl font-bold text-indigo-700">{placedOrder.order_no}</p>
-        <p className="mt-2 text-sm text-gray-600">ยอดรวม {money(placedOrder.total)} บาท</p>
+        <h2 className="text-lg font-bold text-sf-ink">สั่งซื้อสำเร็จ!</h2>
+        <p className="mt-1 text-sm text-sf-muted">เลขที่คำสั่งซื้อ</p>
+        <p className="text-xl font-bold text-sf-primary">{placedOrder.order_no}</p>
+        <p className="mt-2 text-sm text-sf-muted">ยอดรวม {money(placedOrder.total)} บาท</p>
 
         {paymentMethod === "bank_transfer" && !slipDone && (
-          <div className="mt-5 rounded-xl border border-dashed border-indigo-300 bg-indigo-50 p-4 text-left">
-            <p className="mb-2 text-sm font-medium text-gray-700">แนบสลิปการโอนเงิน</p>
+          <div className="mt-5 rounded-xl border border-dashed border-sf-primary/40 bg-sf-soft p-4 text-left">
+            <p className="mb-2 text-sm font-medium text-sf-ink">แนบสลิปการโอนเงิน</p>
             <input
               type="file"
               accept="image/*"
@@ -320,7 +355,7 @@ export default function ShopClient({
             <button
               onClick={handleUploadSlip}
               disabled={!slipFile || slipUploading}
-              className="w-full rounded-lg bg-indigo-600 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="w-full rounded-lg bg-sf-primary py-2 text-sm font-medium text-sf-on-primary disabled:opacity-50"
             >
               {slipUploading ? "กำลังอัปโหลด..." : "อัปโหลดสลิป"}
             </button>
@@ -341,7 +376,7 @@ export default function ShopClient({
         <div className="mt-5 flex gap-2">
           <a
             href={`/shop/${shopSlug}/track?order_no=${encodeURIComponent(placedOrder.order_no)}&phone=${encodeURIComponent(customerPhone)}`}
-            className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="flex-1 rounded-lg border px-4 py-2 text-sm font-medium text-sf-ink hover:bg-sf-soft"
           >
             ติดตามคำสั่งซื้อ
           </a>
@@ -350,7 +385,7 @@ export default function ShopClient({
               setPlacedOrder(null);
               setView("browse");
             }}
-            className="flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
+            className="flex-1 rounded-lg bg-sf-primary px-4 py-2 text-sm font-medium text-sf-on-primary"
           >
             เลือกซื้อต่อ
           </button>
@@ -362,13 +397,13 @@ export default function ShopClient({
   if (view === "checkout") {
     return (
       <div className="mx-auto max-w-md">
-        <button onClick={() => setView("cart")} className="mb-3 text-sm text-gray-500">
+        <button onClick={() => setView("cart")} className="mb-3 text-sm text-sf-muted">
           ← กลับไปที่ตะกร้า
         </button>
-        <h2 className="mb-3 text-lg font-bold text-gray-800">ข้อมูลการสั่งซื้อ</h2>
-        <form onSubmit={handlePlaceOrder} className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
+        <h2 className="mb-3 text-lg font-bold text-sf-ink">ข้อมูลการสั่งซื้อ</h2>
+        <form onSubmit={handlePlaceOrder} className="space-y-3 rounded-2xl bg-sf-surface p-4 shadow-sm">
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">ชื่อผู้สั่งซื้อ</label>
+            <label className="mb-1 block text-xs font-medium text-sf-muted">ชื่อผู้สั่งซื้อ</label>
             <input
               required
               value={customerName}
@@ -378,17 +413,26 @@ export default function ShopClient({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">เบอร์โทรศัพท์</label>
+            <label className="mb-1 block text-xs font-medium text-sf-muted">เบอร์โทรศัพท์</label>
             <input
               required
               value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
+              onChange={(e) => { setCustomerPhone(e.target.value); if (memberStatus !== "unknown") setMemberStatus("unknown"); }}
+              onBlur={(e) => checkMember(e.target.value)}
+              inputMode="tel"
               className="w-full rounded-lg border px-3 py-2 text-sm"
               placeholder="08xxxxxxxx"
             />
+            {memberStatus === "checking" && <p className="mt-1 text-xs text-sf-muted">กำลังตรวจสอบสมาชิก...</p>}
+            {memberStatus === "member" && (
+              <p className="mt-1 text-xs font-semibold text-emerald-600">
+                ✓ คุณเป็นสมาชิกร้าน{memberSaving > 0 ? ` — ได้ราคาสมาชิก ประหยัด ${money(memberSaving)} บาท` : ""}
+              </p>
+            )}
+            {memberStatus === "not_member" && <p className="mt-1 text-xs text-sf-muted">เบอร์นี้ยังไม่เป็นสมาชิก — ใช้ราคาปกติ</p>}
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">อีเมล (ไม่บังคับ)</label>
+            <label className="mb-1 block text-xs font-medium text-sf-muted">อีเมล (ไม่บังคับ)</label>
             <input
               type="email"
               value={customerEmail}
@@ -398,7 +442,7 @@ export default function ShopClient({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">วิธีรับสินค้า</label>
+            <label className="mb-1 block text-xs font-medium text-sf-muted">วิธีรับสินค้า</label>
             <div className="flex gap-2">
               {(["delivery", "pickup"] as OnlineOrderDeliveryMethod[]).map((m) => (
                 <button
@@ -406,7 +450,7 @@ export default function ShopClient({
                   key={m}
                   onClick={() => setDeliveryMethod(m)}
                   className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
-                    deliveryMethod === m ? "border-indigo-600 bg-indigo-50 text-indigo-700" : "text-gray-600"
+                    deliveryMethod === m ? "border-sf-primary bg-sf-soft text-sf-primary" : "text-sf-muted"
                   }`}
                 >
                   {ONLINE_ORDER_DELIVERY_LABEL[m]}
@@ -416,7 +460,7 @@ export default function ShopClient({
           </div>
           {deliveryMethod === "delivery" && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-gray-600">ที่อยู่จัดส่ง</label>
+              <label className="mb-1 block text-xs font-medium text-sf-muted">ที่อยู่จัดส่ง</label>
               <textarea
                 required
                 value={customerAddress}
@@ -427,13 +471,13 @@ export default function ShopClient({
             </div>
           )}
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">วิธีชำระเงิน</label>
+            <label className="mb-1 block text-xs font-medium text-sf-muted">วิธีชำระเงิน</label>
             <div className="space-y-1.5">
               {(["bank_transfer", "cod", "gateway"] as OnlineOrderPaymentMethod[]).map((m) => (
                 <label
                   key={m}
                   className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                    paymentMethod === m ? "border-indigo-600 bg-indigo-50" : ""
+                    paymentMethod === m ? "border-sf-primary bg-sf-soft" : ""
                   } ${m === "gateway" ? "opacity-50" : ""}`}
                 >
                   <input
@@ -449,7 +493,7 @@ export default function ShopClient({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">หมายเหตุ (ถ้ามี)</label>
+            <label className="mb-1 block text-xs font-medium text-sf-muted">หมายเหตุ (ถ้ามี)</label>
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -458,7 +502,7 @@ export default function ShopClient({
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">โค้ดส่วนลด (ถ้ามี)</label>
+            <label className="mb-1 block text-xs font-medium text-sf-muted">โค้ดส่วนลด (ถ้ามี)</label>
             {appliedDiscount ? (
               <div className="flex items-center justify-between rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
                 <span>
@@ -479,7 +523,7 @@ export default function ShopClient({
                   type="button"
                   onClick={handleApplyDiscountCode}
                   disabled={discountCodeChecking}
-                  className="rounded-lg border border-indigo-600 px-3 py-2 text-xs font-medium text-indigo-600 disabled:opacity-50"
+                  className="rounded-lg border border-sf-primary px-3 py-2 text-xs font-medium text-sf-primary disabled:opacity-50"
                 >
                   {discountCodeChecking ? "กำลังตรวจสอบ..." : "ใช้โค้ด"}
                 </button>
@@ -489,7 +533,7 @@ export default function ShopClient({
           </div>
 
           <div className="border-t pt-3 text-sm">
-            <div className="flex items-center justify-between text-gray-500">
+            <div className="flex items-center justify-between text-sf-muted">
               <span>ยอดสินค้า</span>
               <span>{money(cartTotal)} บาท</span>
             </div>
@@ -505,7 +549,7 @@ export default function ShopClient({
                 <span>-{money(discountCodeAmount)} บาท</span>
               </div>
             )}
-            <div className="mt-1 flex items-center justify-between text-base font-bold text-gray-800">
+            <div className="mt-1 flex items-center justify-between text-base font-bold text-sf-ink">
               <span>ยอดรวม</span>
               <span>{money(checkoutTotal)} บาท</span>
             </div>
@@ -516,7 +560,7 @@ export default function ShopClient({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+            className="w-full rounded-lg bg-sf-primary py-2.5 text-sm font-medium text-sf-on-primary disabled:opacity-50"
           >
             {submitting ? "กำลังสั่งซื้อ..." : "ยืนยันสั่งซื้อ"}
           </button>
@@ -528,20 +572,20 @@ export default function ShopClient({
   if (view === "cart") {
     return (
       <div className="mx-auto max-w-md">
-        <button onClick={() => setView("browse")} className="mb-3 text-sm text-gray-500">
+        <button onClick={() => setView("browse")} className="mb-3 text-sm text-sf-muted">
           ← เลือกซื้อสินค้าต่อ
         </button>
-        <h2 className="mb-3 text-lg font-bold text-gray-800">ตะกร้าสินค้า</h2>
+        <h2 className="mb-3 text-lg font-bold text-sf-ink">ตะกร้าสินค้า</h2>
         {cart.length === 0 ? (
-          <p className="rounded-2xl bg-white p-6 text-center text-sm text-gray-400 shadow-sm">ยังไม่มีสินค้าในตะกร้า</p>
+          <p className="rounded-2xl bg-sf-surface p-6 text-center text-sm text-sf-muted shadow-sm">ยังไม่มีสินค้าในตะกร้า</p>
         ) : (
           <div className="space-y-2">
-            {cart.map((c) => {
+            {pricedCart.map((c) => {
               const promoDiscount = promoDiscountFor(c);
               return (
-              <div key={c.product_id} className="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm">
+              <div key={c.product_id} className="flex items-center gap-3 rounded-xl bg-sf-surface p-3 shadow-sm">
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-800">
+                  <p className="text-sm font-medium text-sf-ink">
                     {c.name}
                     {promoDiscount > 0 && (
                       <span className="ml-1.5 rounded-full bg-pink-50 px-1.5 py-0.5 text-[10px] font-normal text-pink-600">
@@ -549,14 +593,14 @@ export default function ShopClient({
                       </span>
                     )}
                   </p>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-sf-muted">
                     {money(c.sell_price)} บาท / {c.unit}
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setQty(c.product_id, c.qty - 1)}
-                    className="h-7 w-7 rounded-full border text-gray-600"
+                    className="h-7 w-7 rounded-full border text-sf-muted"
                   >
                     −
                   </button>
@@ -564,7 +608,7 @@ export default function ShopClient({
                   <button
                     onClick={() => setQty(c.product_id, c.qty + 1)}
                     disabled={!c.no_stock_tracking && c.qty >= c.stock_qty}
-                    className="h-7 w-7 rounded-full border text-gray-600 disabled:opacity-30"
+                    className="h-7 w-7 rounded-full border text-sf-muted disabled:opacity-30"
                   >
                     +
                   </button>
@@ -575,7 +619,7 @@ export default function ShopClient({
               </div>
               );
             })}
-            <div className="mt-3 rounded-xl bg-white p-4 shadow-sm">
+            <div className="mt-3 rounded-xl bg-sf-surface p-4 shadow-sm">
               {promoDiscountTotal > 0 && (
                 <div className="mb-1 flex items-center justify-between text-sm text-pink-600">
                   <span>🎁 ส่วนลดโปรโมชั่น</span>
@@ -583,13 +627,13 @@ export default function ShopClient({
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-500">ยอดรวม</span>
-                <span className="text-lg font-bold text-gray-800">{money(netCartTotal)} บาท</span>
+                <span className="text-sm text-sf-muted">ยอดรวม</span>
+                <span className="text-lg font-bold text-sf-ink">{money(netCartTotal)} บาท</span>
               </div>
             </div>
             <button
               onClick={() => setView("checkout")}
-              className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white"
+              className="w-full rounded-lg bg-sf-primary py-2.5 text-sm font-medium text-sf-on-primary"
             >
               ไปที่หน้าชำระเงิน
             </button>
@@ -611,6 +655,7 @@ export default function ShopClient({
     available: boolean;
     stockText: string;
     promoText: string | null;
+    memberPrice: number | null;
     product?: StorefrontProduct;
     groupName?: string;
   };
@@ -624,6 +669,7 @@ export default function ShopClient({
         minPrice: Number(p.sell_price), maxPrice: Number(p.sell_price), available: !out,
         stockText: p.no_stock_tracking ? "พร้อมส่ง" : out ? "สินค้าหมด" : `เหลือ ${p.stock_qty} ${p.unit}`,
         promoText: promo ? promotionBadgeText(promo) : null, product: p,
+        memberPrice: p.member_price != null ? Number(p.member_price) : null,
       };
     }
     const vs = item.variants;
@@ -636,6 +682,7 @@ export default function ShopClient({
       minPrice: Math.min(...prices), maxPrice: Math.max(...prices), available: always || totalStock > 0,
       stockText: !always && totalStock <= 0 ? "สินค้าหมด" : `${vs.length} ตัวเลือก`,
       promoText: promoV ? promotionBadgeText(promoV) : null, groupName: item.groupName,
+      memberPrice: (() => { const m = vs.map((v) => v.member_price).filter((x): x is number => x != null).map(Number); return m.length ? Math.min(...m) : null; })(),
     };
   });
   const shownItems = displayItems
@@ -655,23 +702,26 @@ export default function ShopClient({
 
   return (
     <div>
-      {/* แบนเนอร์ร้าน */}
-      <section className="relative mb-5 overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-600 via-indigo-600 to-violet-600 p-6 text-white shadow-lg shadow-indigo-600/20 sm:p-8">
-        <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-white/10" />
-        <div className="pointer-events-none absolute -bottom-24 right-32 h-48 w-48 rounded-full bg-white/5" />
-        <div className="relative flex flex-wrap items-center gap-4 sm:gap-5">
-          <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl bg-white text-3xl font-extrabold text-indigo-600 shadow-md sm:h-20 sm:w-20 sm:text-4xl">{initial}</div>
+      {/* แบนเนอร์ร้าน (หน้าตาเปลี่ยนตามธีม) */}
+      <section className={`relative mb-5 overflow-hidden rounded-sf bg-sf-hero p-6 text-sf-hero-ink shadow-lg shadow-sf-primary/10 sm:p-10 ${L.heroAlign === "center" ? "text-center" : ""}`}>
+        <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-sf-hero-ink/10" />
+        <div className="pointer-events-none absolute -bottom-24 right-32 h-48 w-48 rounded-full bg-sf-hero-ink/5" />
+        <div className={`relative flex flex-wrap items-center gap-4 sm:gap-5 ${L.heroAlign === "center" ? "flex-col justify-center" : ""}`}>
+          <div className="grid h-16 w-16 shrink-0 place-items-center rounded-sf bg-sf-surface text-3xl font-extrabold text-sf-primary shadow-md sm:h-20 sm:w-20 sm:text-4xl">{initial}</div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-extrabold leading-tight sm:text-3xl">{shopName}</h1>
-            <p className="mt-1 text-sm text-indigo-100">เลือกซื้อสินค้าออนไลน์ สั่งง่าย จ่ายสะดวก ติดตามสถานะได้ตลอด</p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium">
-              <span className="rounded-full bg-white/15 px-3 py-1">🛍️ พร้อมขาย {availableCount.toLocaleString("th-TH")} รายการ</span>
-              {promotions.length > 0 && <span className="rounded-full bg-rose-500/90 px-3 py-1">🎁 โปรโมชั่น {promotions.length} รายการ</span>}
-              {shopPhone && <a href={`tel:${shopPhone}`} className="rounded-full bg-white/15 px-3 py-1 hover:bg-white/25">📞 {shopPhone}</a>}
+            <h1 className={`text-2xl font-extrabold leading-tight sm:text-4xl ${L.upperTitle ? "uppercase tracking-[0.15em]" : ""}`}>{shopName}</h1>
+            <p className="mt-1.5 text-sm text-sf-hero-ink/80 sm:text-base">เลือกซื้อสินค้าออนไลน์ สั่งง่าย จ่ายสะดวก ติดตามสถานะได้ตลอด</p>
+            <div className={`mt-4 flex flex-wrap gap-2 text-xs font-medium ${L.heroAlign === "center" ? "justify-center" : ""}`}>
+              <span className="rounded-sf-btn bg-sf-hero-ink/15 px-3 py-1">🛍️ พร้อมขาย {availableCount.toLocaleString("th-TH")} รายการ</span>
+              {dealsCount > 0 && (
+                <Link href={`/shop/${shopSlug}/deals`} className="rounded-sf-btn bg-sf-accent px-3 py-1 text-white hover:opacity-90">🎁 โปรโมชั่น & โค้ดส่วนลด {dealsCount} รายการ ›</Link>
+              )}
+              <Link href={`/shop/${shopSlug}/bills`} className="rounded-sf-btn bg-sf-hero-ink/15 px-3 py-1 hover:bg-sf-hero-ink/25">🧾 ค้นหาบิลของฉัน</Link>
+              {shopPhone && <a href={`tel:${shopPhone}`} className="rounded-sf-btn bg-sf-hero-ink/15 px-3 py-1 hover:bg-sf-hero-ink/25">📞 {shopPhone}</a>}
               {contactEmail && (
                 <a
                   href={`mailto:${contactEmail}?subject=${encodeURIComponent(`สอบถามสินค้า - ${shopName}`)}`}
-                  className="rounded-full bg-white/15 px-3 py-1 hover:bg-white/25"
+                  className="rounded-sf-btn bg-sf-hero-ink/15 px-3 py-1 hover:bg-sf-hero-ink/25"
                 >
                   ✉️ อีเมลร้าน
                 </a>
@@ -682,21 +732,21 @@ export default function ShopClient({
       </section>
 
       {/* ค้นหา / เรียง / หมวดหมู่ */}
-      <div className="sticky top-14 z-20 -mx-4 mb-4 border-b border-gray-100 bg-gray-50/95 px-4 pb-3 pt-2 backdrop-blur">
+      <div className="sticky top-14 z-20 -mx-4 mb-4 border-b border-sf-line bg-sf-bg/95 px-4 pb-3 pt-2 backdrop-blur">
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <svg className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+            <svg className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sf-muted" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="ค้นหาสินค้า..."
-              className="w-full rounded-full border border-gray-200 bg-white py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-indigo-400 focus:outline-none"
+              className="w-full rounded-full border border-sf-line bg-sf-surface py-2.5 pl-10 pr-4 text-sm shadow-sm focus:border-sf-primary focus:outline-none"
             />
           </div>
           <select
             value={sortMode}
             onChange={(e) => setSortMode(e.target.value as typeof sortMode)}
-            className="rounded-full border border-gray-200 bg-white px-3 py-2.5 text-sm shadow-sm"
+            className="rounded-full border border-sf-line bg-sf-surface px-3 py-2.5 text-sm shadow-sm"
           >
             <option value="recommended">แนะนำ</option>
             <option value="price_asc">ราคา ต่ำ → สูง</option>
@@ -711,7 +761,7 @@ export default function ShopClient({
               type="button"
               onClick={() => setCategory(c)}
               className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                category === c ? "bg-indigo-600 text-white shadow-sm" : "border border-gray-200 bg-white text-gray-600 hover:border-indigo-300"
+                category === c ? "bg-sf-primary text-sf-on-primary shadow-sm" : "border border-sf-line bg-sf-surface text-sf-muted hover:border-sf-primary/50"
               }`}
             >
               {c === "all" ? "ทั้งหมด" : c}
@@ -720,7 +770,7 @@ export default function ShopClient({
         </div>
       </div>
 
-      <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+      <div className="mb-3 flex items-center justify-between text-xs text-sf-muted">
         <span>พบ {shownItems.length.toLocaleString("th-TH")} รายการ</span>
         {hiddenCount > 0 && (
           <label className="flex cursor-pointer items-center gap-1.5">
@@ -730,55 +780,63 @@ export default function ShopClient({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+      <div className={`grid gap-3 sm:gap-4 ${L.grid}`}>
         {shownItems.slice(0, visibleCount).map((it) => {
           const inCart = it.product ? cart.find((c) => c.product_id === it.product!.id) : undefined;
           const atMax = !!(it.product && inCart && !it.product.no_stock_tracking && inCart.qty >= Number(it.product.stock_qty));
           const onAdd = () => (it.kind === "single" && it.product ? addToCart(it.product) : setVariantPopupGroup(it.groupName!));
           return (
-            <div key={it.key} className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-100 transition duration-200 hover:-translate-y-0.5 hover:shadow-lg">
+            <div
+              key={it.key}
+              className={`group flex flex-col overflow-hidden rounded-sf bg-sf-surface transition duration-200 ${
+                L.cardStyle === "shadow" ? "shadow-sm ring-1 ring-sf-line hover:-translate-y-0.5 hover:shadow-lg" : L.cardStyle === "border" ? "border hover:border-sf-primary/60" : ""
+              }`}
+            >
               <button
                 type="button"
                 onClick={onAdd}
                 disabled={!it.available}
-                className="relative block aspect-square w-full overflow-hidden bg-gradient-to-br from-indigo-50 to-violet-100"
+                className={`relative block w-full overflow-hidden bg-sf-soft ${L.imageAspect === "portrait" ? "aspect-[3/4]" : "aspect-square"} ${L.cardStyle === "flat" ? "rounded-sf" : ""}`}
                 style={!it.image && it.color ? { background: it.color } : undefined}
               >
                 {it.image ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={it.image} alt={it.name} loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
                 ) : (
-                  <span className="grid h-full w-full place-items-center text-5xl font-extrabold text-indigo-300/80">{it.name.trim().charAt(0)}</span>
+                  <span className="grid h-full w-full place-items-center text-5xl font-extrabold text-sf-primary/30">{it.name.trim().charAt(0)}</span>
                 )}
                 {it.promoText && (
                   <span className="absolute left-2 top-2 rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white shadow">🎁 โปร</span>
                 )}
                 {it.kind === "group" && it.available && (
-                  <span className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 shadow">{it.stockText}</span>
+                  <span className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-sf-primary shadow">{it.stockText}</span>
                 )}
                 {!it.available && (
                   <span className="absolute inset-0 grid place-items-center bg-white/60">
-                    <span className="rounded-full bg-gray-900/80 px-3 py-1 text-xs font-semibold text-white">สินค้าหมด</span>
+                    <span className="rounded-full bg-black/75 px-3 py-1 text-xs font-semibold text-white">สินค้าหมด</span>
                   </span>
                 )}
               </button>
               <div className="flex flex-1 flex-col p-3">
-                <p className="line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-gray-800">{it.name}</p>
+                <p className={`line-clamp-2 min-h-[2.5rem] text-sm font-medium leading-5 text-sf-ink ${L.cardStyle === "flat" ? "px-0" : ""}`}>{it.name}</p>
                 {it.promoText && <p className="mt-1 truncate text-[11px] font-semibold text-rose-600">{it.promoText}</p>}
                 <div className="mt-auto flex items-end justify-between gap-2 pt-2">
                   <div className="min-w-0">
-                    <p className="truncate text-lg font-extrabold text-indigo-700">
+                    <p className="truncate text-lg font-extrabold text-sf-price">
                       ฿{money(it.minPrice)}{it.maxPrice !== it.minPrice && <span className="text-sm font-semibold"> - {money(it.maxPrice)}</span>}
                     </p>
-                    {it.kind === "single" && <p className="text-[11px] text-gray-400">{it.stockText}</p>}
+                    {it.memberPrice != null && it.memberPrice < it.minPrice && (
+                      <p className="truncate text-[11px] font-semibold text-emerald-600">สมาชิก ฿{money(it.memberPrice)}</p>
+                    )}
+                    {it.kind === "single" && <p className="text-[11px] text-sf-muted">{it.stockText}</p>}
                   </div>
                   <button
                     type="button"
                     onClick={onAdd}
                     disabled={!it.available || atMax}
                     aria-label="หยิบใส่ตะกร้า"
-                    className={`grid h-10 min-w-10 shrink-0 place-items-center rounded-full px-2 text-sm font-bold text-white shadow-md transition disabled:bg-gray-300 disabled:shadow-none ${
-                      inCart ? "bg-emerald-500 hover:bg-emerald-600" : "bg-indigo-600 hover:bg-indigo-700"
+                    className={`grid h-10 min-w-10 shrink-0 place-items-center rounded-sf-btn px-2 text-sm font-bold shadow-md transition disabled:bg-sf-line disabled:text-sf-muted disabled:shadow-none ${
+                      inCart ? "bg-emerald-500 text-white hover:bg-emerald-600" : "bg-sf-primary text-sf-on-primary hover:bg-sf-primary-dark"
                     }`}
                   >
                     {inCart ? `✓ ${inCart.qty}` : <span className="text-xl leading-none">+</span>}
@@ -789,7 +847,7 @@ export default function ShopClient({
           );
         })}
         {shownItems.length === 0 && (
-          <div className="col-span-full rounded-2xl bg-white py-14 text-center text-sm text-gray-400 shadow-sm">ไม่พบสินค้าที่ค้นหา</div>
+          <div className="col-span-full rounded-2xl bg-sf-surface py-14 text-center text-sm text-sf-muted shadow-sm">ไม่พบสินค้าที่ค้นหา</div>
         )}
       </div>
       {shownItems.length > visibleCount && (
@@ -797,7 +855,7 @@ export default function ShopClient({
           <button
             type="button"
             onClick={() => setVisibleCount((n) => n + PAGE)}
-            className="rounded-full border border-indigo-200 bg-white px-6 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
+            className="rounded-full border border-sf-primary/30 bg-sf-surface px-6 py-2.5 text-sm font-semibold text-sf-primary shadow-sm hover:bg-sf-soft"
           >
             ดูสินค้าเพิ่มเติม ({(shownItems.length - visibleCount).toLocaleString("th-TH")})
           </button>
@@ -812,28 +870,28 @@ export default function ShopClient({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl sm:rounded-2xl"
+            className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-sf-surface p-4 shadow-xl sm:rounded-2xl"
           >
             <div className="mb-1 flex items-center justify-between">
-              <h3 className="text-base font-bold text-gray-800">{variantPopupGroup}</h3>
-              <button onClick={() => setVariantPopupGroup(null)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <h3 className="text-base font-bold text-sf-ink">{variantPopupGroup}</h3>
+              <button onClick={() => setVariantPopupGroup(null)} className="text-sf-muted hover:text-sf-ink">✕</button>
             </div>
-            <p className="mb-3 text-xs text-gray-400">เลือกเบอร์/ตัวเลือกที่ต้องการเพิ่มลงตะกร้า</p>
+            <p className="mb-3 text-xs text-sf-muted">เลือกเบอร์/ตัวเลือกที่ต้องการเพิ่มลงตะกร้า</p>
             <div className="grid grid-cols-2 gap-3">
               {popupVariants.map((v) => {
                 const inCart = cart.find((c) => c.product_id === v.id);
                 const outOfStock = !v.no_stock_tracking && Number(v.stock_qty) <= 0;
                 return (
-                  <div key={v.id} className="flex flex-col overflow-hidden rounded-md border border-gray-200">
+                  <div key={v.id} className="flex flex-col overflow-hidden rounded-md border border-sf-line">
                     <div
-                      className="relative flex aspect-square items-center justify-center overflow-hidden bg-gray-100"
+                      className="relative flex aspect-square items-center justify-center overflow-hidden bg-sf-soft"
                       style={!v.image_url && v.card_color ? { backgroundColor: v.card_color } : undefined}
                     >
                       {v.image_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={v.image_url} alt={v.name} className="h-full w-full object-cover" />
                       ) : v.card_color ? null : (
-                        <span className="text-2xl text-gray-300">📦</span>
+                        <span className="text-2xl text-sf-muted">📦</span>
                       )}
                       {outOfStock && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/50">
@@ -842,15 +900,15 @@ export default function ShopClient({
                       )}
                     </div>
                     <div className="flex flex-1 flex-col p-2">
-                      <p className="text-xs text-gray-800">{v.variant_label || v.name}</p>
-                      <p className="mt-1 text-base font-medium text-indigo-700">฿{money(v.sell_price)}</p>
-                      <p className="text-[11px] text-gray-400">
+                      <p className="text-xs text-sf-ink">{v.variant_label || v.name}</p>
+                      <p className="mt-1 text-base font-medium text-sf-primary">฿{money(v.sell_price)}</p>
+                      <p className="text-[11px] text-sf-muted">
                         {v.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `เหลือ ${v.stock_qty} ${v.unit}`}
                       </p>
                       <button
                         onClick={() => addToCart(v)}
                         disabled={outOfStock || (inCart && !v.no_stock_tracking ? inCart.qty >= Number(v.stock_qty) : false)}
-                        className="mt-2 w-full rounded-sm bg-indigo-600 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-700 disabled:bg-gray-300"
+                        className="mt-2 w-full rounded-sm bg-sf-primary py-1.5 text-xs font-medium text-sf-on-primary transition-colors hover:bg-sf-primary-dark disabled:bg-sf-line disabled:text-sf-muted"
                       >
                         {inCart ? `ในตะกร้า (${inCart.qty})` : "หยิบใส่ตะกร้า"}
                       </button>
@@ -859,7 +917,7 @@ export default function ShopClient({
                 );
               })}
               {popupVariants.length === 0 && (
-                <p className="col-span-full text-sm text-gray-400">ไม่พบตัวเลือกในกลุ่มนี้</p>
+                <p className="col-span-full text-sm text-sf-muted">ไม่พบตัวเลือกในกลุ่มนี้</p>
               )}
             </div>
           </div>
@@ -869,9 +927,9 @@ export default function ShopClient({
       {cartCount > 0 && (
         <button
           onClick={() => setView("cart")}
-          className="fixed bottom-4 left-4 z-40 flex items-center gap-3 rounded-full bg-gray-900 py-3 pl-4 pr-5 text-sm font-semibold text-white shadow-xl sm:left-1/2 sm:-translate-x-1/2"
+          className="fixed bottom-4 left-4 z-40 flex items-center gap-3 rounded-sf-btn bg-sf-ink py-3 pl-4 pr-5 text-sm font-semibold text-sf-bg shadow-xl sm:left-1/2 sm:-translate-x-1/2"
         >
-          <span className="grid h-7 min-w-7 place-items-center rounded-full bg-white px-1.5 text-xs font-bold text-gray-900">{cartCount}</span>
+          <span className="grid h-7 min-w-7 place-items-center rounded-full bg-sf-surface px-1.5 text-xs font-bold text-sf-ink">{cartCount}</span>
           ดูตะกร้า · ฿{money(netCartTotal)}
         </button>
       )}

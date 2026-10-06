@@ -23,11 +23,11 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
   const shopId = shop.id as string;
 
   const { data: products } = await supabase.rpc("list_storefront_products", { p_shop_id: shopId });
-  const { data: shopSettings } = await supabase
-    .from("shop_settings")
-    .select("shop_name, phone, address")
-    .eq("shop_id", shopId)
-    .maybeSingle();
+  // shop_settings อ่านตรงไม่ได้สำหรับคนทั่วไป (RLS) — ใช้ RPC สาธารณะแทน
+  const { data: profRows } = await supabase.rpc("get_storefront_profile", { p_shop_id: shopId });
+  const shopSettings = (Array.isArray(profRows) ? profRows[0] : profRows) as { shop_name: string | null; phone: string | null; theme: string | null } | null;
+  const { data: deals } = await supabase.rpc("get_storefront_deals", { p_shop_id: shopId });
+  const dealsCount = ((deals as any)?.codes?.length ?? 0) + ((deals as any)?.promotions?.length ?? 0);
   const { data: promotions } = await supabase.rpc("get_active_promotions", { p_shop_id: shopId });
   const { data: contactEmail } = await supabase.rpc("get_storefront_contact", { p_shop_id: shopId });
 
@@ -40,6 +40,8 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
       promotions={promotions ?? []}
       contactEmail={(contactEmail as string | null) ?? null}
       shopPhone={shopSettings?.phone ?? null}
+      themeId={shopSettings?.theme ?? "modern"}
+      dealsCount={dealsCount}
     />
   );
 }

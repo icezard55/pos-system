@@ -13,6 +13,7 @@ interface Bill {
   status: string;
   tracking_number: string | null;
   items: string | null;
+  sale_id: string | null;
 }
 
 const CHANNEL: Record<string, string> = {
@@ -143,6 +144,16 @@ export default function BillsClient({ shopId, slug }: { shopId: string; slug: st
                       <span className="text-xs text-sf-muted">{b.tracking_number ? `เลขพัสดุ ${b.tracking_number}` : ""}</span>
                       <span className="text-lg font-extrabold text-sf-price">฿{money(b.total)}</span>
                     </div>
+                    {b.sale_id ? (
+                      <Link
+                        href={`/shop/${slug}/receipt/${b.sale_id}?download=1`}
+                        className="mt-3 block w-full rounded-sf-btn bg-sf-primary py-2.5 text-center text-sm font-semibold text-sf-on-primary hover:bg-sf-primary-dark"
+                      >
+                        📄 ดาวน์โหลดใบเสร็จ (PDF)
+                      </Link>
+                    ) : (
+                      <p className="mt-3 text-center text-xs text-sf-muted">ใบเสร็จจะดาวน์โหลดได้เมื่อร้านยืนยันออเดอร์แล้ว</p>
+                    )}
                   </div>
                 );
               })}

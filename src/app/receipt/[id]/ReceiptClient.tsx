@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Sale, SaleItem, SalePayment, ShopSettings } from "@/lib/types";
 import { splitVat } from "@/lib/types";
 
@@ -17,11 +17,17 @@ export default function ReceiptClient({
   items,
   payments,
   shopSettings,
+  customerMode = false,
+  backHref,
+  autoDownload = false,
 }: {
   sale: Sale;
   items: SaleItem[];
   payments: SalePayment[];
   shopSettings: ShopSettings | null;
+  customerMode?: boolean; // ลูกค้าเปิดจากหน้าค้นหาบิล: ดาวน์โหลดได้อย่างเดียว
+  backHref?: string;
+  autoDownload?: boolean;
 }) {
   const dt = new Date(sale.created_at);
   const { base, vat } = splitVat(Number(sale.total));
@@ -68,6 +74,16 @@ export default function ReceiptClient({
       setDownloadingPdf(false);
     }
   }
+
+  const autoRan = useRef(false);
+  useEffect(() => {
+    if (customerMode && autoDownload && !autoRan.current) {
+      autoRan.current = true;
+      const t = setTimeout(() => handleDownloadPdf(), 400);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerMode, autoDownload]);
 
   const printCss =
     paperSize === "a5"
@@ -191,41 +207,59 @@ export default function ReceiptClient({
           </div>
         )}
 
+        {customerMode ? (
+          <div className="no-print mt-6 space-y-2">
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="w-full rounded-lg bg-brand py-2.5 text-sm font-semibold text-white hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {downloadingPdf ? "กำลังสร้างไฟล์ PDF..." : "📄 ดาวน์โหลดใบเสร็จ (PDF)"}
+            </button>
+            {backHref && (
+              <Link href={backHref} className="block text-center text-xs text-gray-500 hover:underline">
+                ← กลับไปหน้าค้นหาบิล
+              </Link>
+            )}
+          </div>
+        ) : (
         <div className="no-print mt-6 space-y-2">
-          <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
-            <span>ขนาดกระดาษ:</span>
+            <div className="flex items-center justify-center gap-2 text-xs text-gray-500">
+              <span>ขนาดกระดาษ:</span>
+              <button
+                type="button"
+                onClick={() => setPaperSize("thermal")}
+                className={`rounded-full px-3 py-1 font-medium ${paperSize === "thermal" ? "bg-brand text-white" : "border text-gray-600 hover:bg-gray-50"}`}
+              >
+                ความร้อน 80mm
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaperSize("a5")}
+                className={`rounded-full px-3 py-1 font-medium ${paperSize === "a5" ? "bg-brand text-white" : "border text-gray-600 hover:bg-gray-50"}`}
+              >
+                A5
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setPaperSize("thermal")}
-              className={`rounded-full px-3 py-1 font-medium ${paperSize === "thermal" ? "bg-brand text-white" : "border text-gray-600 hover:bg-gray-50"}`}
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="w-full rounded-lg border border-brand py-2 text-sm font-semibold text-brand hover:bg-brand/5 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              ความร้อน 80mm
+              {downloadingPdf ? "กำลังสร้างไฟล์ PDF..." : "📄 ดาวน์โหลด PDF"}
             </button>
-            <button
-              type="button"
-              onClick={() => setPaperSize("a5")}
-              className={`rounded-full px-3 py-1 font-medium ${paperSize === "a5" ? "bg-brand text-white" : "border text-gray-600 hover:bg-gray-50"}`}
-            >
-              A5
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => window.print()} className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark">
+                🖨️ พิมพ์ใบเสร็จ
+              </button>
+              <Link href="/pos" className="flex-1 rounded-lg border py-2 text-center text-sm hover:bg-gray-50">
+                ขายต่อ
+              </Link>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={handleDownloadPdf}
-            disabled={downloadingPdf}
-            className="w-full rounded-lg border border-brand py-2 text-sm font-semibold text-brand hover:bg-brand/5 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {downloadingPdf ? "กำลังสร้างไฟล์ PDF..." : "📄 ดาวน์โหลด PDF"}
-          </button>
-          <div className="flex gap-2">
-            <button onClick={() => window.print()} className="flex-1 rounded-lg bg-brand py-2 text-sm font-semibold text-white hover:bg-brand-dark">
-              🖨️ พิมพ์ใบเสร็จ
-            </button>
-            <Link href="/pos" className="flex-1 rounded-lg border py-2 text-center text-sm hover:bg-gray-50">
-              ขายต่อ
-            </Link>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

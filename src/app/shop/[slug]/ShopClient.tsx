@@ -192,6 +192,46 @@ export default function ShopClient({
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [memberKey]);
+
+  // บังคับกรอกชื่อ+เบอร์ก่อนดูตะกร้า/ราคา (ถือเป็นการ "สมัครสมาชิก" — ถ้าเบอร์ไม่เคยมีในระบบจะเพิ่มเป็นลูกค้าใหม่ให้อัตโนมัติ)
+  const [cartGateOpen, setCartGateOpen] = useState(false);
+  const [gateName, setGateName] = useState("");
+  const [gatePhone, setGatePhone] = useState("");
+  const [gateBusy, setGateBusy] = useState(false);
+  const [gateError, setGateError] = useState<string | null>(null);
+
+  function openCartGate() {
+    if (isMember) { setView("cart"); return; }
+    setGateName(customerName || "");
+    setGatePhone(customerPhone || "");
+    setGateError(null);
+    setCartGateOpen(true);
+  }
+
+  async function handleCartGateSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (gateBusy) return;
+    const name = gateName.trim();
+    const phone = gatePhone.trim();
+    if (!name) { setGateError("กรุณากรอกชื่อ"); return; }
+    if (phone.replace(/\D/g, "").length < 9) { setGateError("กรุณากรอกเบอร์โทรให้ถูกต้อง"); return; }
+    setGateBusy(true);
+    setGateError(null);
+    try {
+      const { error } = await supabase.rpc("storefront_register_member", { p_shop_id: shopId, p_name: name, p_phone: phone });
+      if (error) throw error;
+      setMemberStatus("member");
+      setCustomerName((v) => v || name);
+      setCustomerPhone(phone);
+      try { window.localStorage.setItem(memberKey, phone); } catch { /* ignore */ }
+      setCartGateOpen(false);
+      setView("cart");
+    } catch (ex: any) {
+      setGateError(ex.message ?? "ไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      setGateBusy(false);
+    }
+  }
   const pricedCart = cart.map((c) => (isMember && c.member_price != null ? { ...c, sell_price: Number(c.member_price) } : c));
   const memberSaving = cart.reduce((s, c) => s + (isMember && c.member_price != null ? (c.sell_price - Number(c.member_price)) * c.qty : 0), 0);
 
@@ -964,12 +1004,64 @@ export default function ShopClient({
 
       {cartCount > 0 && (
         <button
-          onClick={() => setView("cart")}
+          onClick={openCartGate}
           className="fixed bottom-4 left-4 z-40 flex items-center gap-3 rounded-sf-btn bg-sf-ink py-3 pl-4 pr-5 text-sm font-semibold text-sf-bg shadow-xl sm:left-1/2 sm:-translate-x-1/2"
         >
           <span className="grid h-7 min-w-7 place-items-center rounded-full bg-sf-surface px-1.5 text-xs font-bold text-sf-ink">{cartCount}</span>
-          ดูตะกร้า · ฿{money(netCartTotal)}
+          {isMember ? <>ดูตะกร้า · ฿{money(netCartTotal)}</> : <>ดูตะกร้า · กรอกเบอร์เพื่อดูราคา</>}
         </button>
+      )}
+
+      {cartGateOpen && (
+        <div
+          onClick={() => !gateBusy && setCartGateOpen(false)}
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-t-2xl bg-sf-surface p-5 shadow-xl sm:rounded-2xl"
+          >
+            <h3 className="mb-1 text-base font-bold text-sf-ink">กรอกชื่อ-เบอร์โทรเพื่อดูราคา</h3>
+            <p className="mb-3 text-xs text-sf-muted">ร้านขอข้อมูลติดต่อก่อนแสดงราคาสินค้า เพื่อดูแลลูกค้าได้ดีขึ้น ถ้าเคยเป็นลูกค้าร้านอยู่แล้วจะเห็นราคาสมาชิกทันที</p>
+            <form onSubmit={handleCartGateSubmit} className="space-y-2.5">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-sf-muted">ชื่อ</label>
+                <input
+                  autoFocus
+                  value={gateName}
+                  onChange={(e) => setGateName(e.target.value)}
+                  placeholder="ชื่อ-นามสกุล"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-sf-muted">เบอร์โทรศัพท์</label>
+                <input
+                  value={gatePhone}
+                  onChange={(e) => setGatePhone(e.target.value)}
+                  inputMode="tel"
+                  placeholder="08xxxxxxxx"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                />
+              </div>
+              {gateError && <p className="text-xs text-red-600">{gateError}</p>}
+              <button
+                type="submit"
+                disabled={gateBusy}
+                className="w-full rounded-full bg-sf-primary py-2.5 text-sm font-semibold text-sf-on-primary disabled:opacity-60"
+              >
+                {gateBusy ? "กำลังตรวจสอบ..." : "ดูราคา & ไปที่ตะกร้า"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCartGateOpen(false)}
+                className="w-full text-center text-xs text-sf-muted hover:underline"
+              >
+                ยกเลิก
+              </button>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

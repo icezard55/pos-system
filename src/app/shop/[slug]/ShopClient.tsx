@@ -727,6 +727,32 @@ export default function ShopClient({
                 </a>
               )}
             </div>
+            <div className={`mt-3 flex flex-wrap items-center gap-2 text-xs ${L.heroAlign === "center" ? "justify-center" : ""}`}>
+              {isMember ? (
+                <span className="rounded-sf-btn bg-emerald-500 px-3 py-1.5 font-semibold text-white">✓ คุณเป็นสมาชิกร้าน — เห็นราคาสมาชิกแล้ว</span>
+              ) : (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); checkMember(customerPhone); }}
+                  className="flex items-center gap-1.5"
+                >
+                  <input
+                    value={customerPhone}
+                    onChange={(e) => { setCustomerPhone(e.target.value); if (memberStatus !== "unknown") setMemberStatus("unknown"); }}
+                    inputMode="tel"
+                    placeholder="เบอร์โทรสมาชิก"
+                    className="w-32 rounded-full border border-sf-line bg-sf-surface px-3 py-1.5 text-xs text-sf-ink focus:border-sf-primary focus:outline-none sm:w-40"
+                  />
+                  <button
+                    type="submit"
+                    disabled={memberStatus === "checking" || !customerPhone.trim()}
+                    className="rounded-full bg-sf-hero-ink/15 px-3 py-1.5 font-semibold hover:bg-sf-hero-ink/25 disabled:opacity-50"
+                  >
+                    {memberStatus === "checking" ? "กำลังตรวจสอบ..." : "ดูราคาสมาชิก"}
+                  </button>
+                </form>
+              )}
+              {memberStatus === "not_member" && <span className="text-sf-hero-ink/70">เบอร์นี้ยังไม่เป็นสมาชิก — ใช้ราคาปกติ</span>}
+            </div>
           </div>
         </div>
       </section>
@@ -825,7 +851,7 @@ export default function ShopClient({
                     <p className="truncate text-lg font-extrabold text-sf-price">
                       ฿{money(it.minPrice)}{it.maxPrice !== it.minPrice && <span className="text-sm font-semibold"> - {money(it.maxPrice)}</span>}
                     </p>
-                    {it.memberPrice != null && it.memberPrice < it.minPrice && (
+                    {isMember && it.memberPrice != null && it.memberPrice < it.minPrice && (
                       <p className="truncate text-[11px] font-semibold text-emerald-600">สมาชิก ฿{money(it.memberPrice)}</p>
                     )}
                     {it.kind === "single" && <p className="text-[11px] text-sf-muted">{it.stockText}</p>}

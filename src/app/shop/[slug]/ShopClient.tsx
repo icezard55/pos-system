@@ -213,15 +213,21 @@ export default function ShopClient({
     if (gateBusy) return;
     const name = gateName.trim();
     const phone = gatePhone.trim();
-    if (!name) { setGateError("กรุณากรอกชื่อ"); return; }
     if (phone.replace(/\D/g, "").length < 9) { setGateError("กรุณากรอกเบอร์โทรให้ถูกต้อง"); return; }
     setGateBusy(true);
     setGateError(null);
     try {
-      const { error } = await supabase.rpc("storefront_register_member", { p_shop_id: shopId, p_name: name, p_phone: phone });
-      if (error) throw error;
+      // เป็นสมาชิกร้านอยู่แล้ว (เบอร์ตรงกับลูกค้าเดิม) — กรอกแค่เบอร์ก็เข้าได้เลย ไม่ต้องกรอกชื่อ
+      const { data: already, error: checkErr } = await supabase.rpc("check_storefront_member", { p_shop_id: shopId, p_phone: phone });
+      if (checkErr) throw checkErr;
+      if (already !== true) {
+        // เบอร์ใหม่ ไม่เคยเป็นลูกค้าของร้าน — ต้องกรอกชื่อเพื่อสมัครสมาชิกใหม่
+        if (!name) { setGateError("เบอร์นี้ยังไม่เคยเป็นลูกค้าร้าน กรุณากรอกชื่อเพื่อสมัครสมาชิกด้วยครับ"); setGateBusy(false); return; }
+        const { error } = await supabase.rpc("storefront_register_member", { p_shop_id: shopId, p_name: name, p_phone: phone });
+        if (error) throw error;
+      }
       setMemberStatus("member");
-      setCustomerName((v) => v || name);
+      if (name) setCustomerName((v) => v || name);
       setCustomerPhone(phone);
       try { window.localStorage.setItem(memberKey, phone); } catch { /* ignore */ }
       setCartGateOpen(false);
@@ -1021,26 +1027,26 @@ export default function ShopClient({
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-sm rounded-t-2xl bg-sf-surface p-5 shadow-xl sm:rounded-2xl"
           >
-            <h3 className="mb-1 text-base font-bold text-sf-ink">กรอกชื่อ-เบอร์โทรเพื่อดูราคา</h3>
-            <p className="mb-3 text-xs text-sf-muted">ร้านขอข้อมูลติดต่อก่อนแสดงราคาสินค้า เพื่อดูแลลูกค้าได้ดีขึ้น ถ้าเคยเป็นลูกค้าร้านอยู่แล้วจะเห็นราคาสมาชิกทันที</p>
+            <h3 className="mb-1 text-base font-bold text-sf-ink">กรอกเบอร์โทรเพื่อดูราคา</h3>
+            <p className="mb-3 text-xs text-sf-muted">ถ้าเป็นลูกค้าร้านอยู่แล้ว กรอกแค่เบอร์โทรก็เข้าดูราคาได้เลย ถ้าเป็นลูกค้าใหม่ กรุณากรอกชื่อเพิ่มเพื่อสมัครสมาชิก</p>
             <form onSubmit={handleCartGateSubmit} className="space-y-2.5">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-sf-muted">ชื่อ</label>
-                <input
-                  autoFocus
-                  value={gateName}
-                  onChange={(e) => setGateName(e.target.value)}
-                  placeholder="ชื่อ-นามสกุล"
-                  className="w-full rounded-lg border px-3 py-2 text-sm"
-                />
-              </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-sf-muted">เบอร์โทรศัพท์</label>
                 <input
+                  autoFocus
                   value={gatePhone}
                   onChange={(e) => setGatePhone(e.target.value)}
                   inputMode="tel"
                   placeholder="08xxxxxxxx"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-sf-muted">ชื่อ <span className="font-normal text-sf-muted/70">(กรอกเฉพาะลูกค้าใหม่)</span></label>
+                <input
+                  value={gateName}
+                  onChange={(e) => setGateName(e.target.value)}
+                  placeholder="ชื่อ-นามสกุล"
                   className="w-full rounded-lg border px-3 py-2 text-sm"
                 />
               </div>

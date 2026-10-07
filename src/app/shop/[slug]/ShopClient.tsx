@@ -33,6 +33,13 @@ function money(n: number) {
   return Number(n).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// ซ่อนราคาเต็มจากคนทั่วไปที่ยังไม่ยืนยันเป็นสมาชิก — โชว์แค่หลักแรก เลขที่เหลือเป็น X เช่น 180 -> "1XX"
+function maskPrice(n: number): string {
+  const intPart = Math.max(0, Math.floor(Number(n) || 0)).toString();
+  if (intPart.length <= 1) return "X";
+  return intPart[0] + "X".repeat(intPart.length - 1);
+}
+
 type View = "browse" | "cart" | "checkout" | "done";
 
 export default function ShopClient({
@@ -849,8 +856,13 @@ export default function ShopClient({
                 <div className="mt-auto flex items-end justify-between gap-2 pt-2">
                   <div className="min-w-0">
                     <p className="truncate text-lg font-extrabold text-sf-price">
-                      ฿{money(it.minPrice)}{it.maxPrice !== it.minPrice && <span className="text-sm font-semibold"> - {money(it.maxPrice)}</span>}
+                      {isMember ? (
+                        <>฿{money(it.minPrice)}{it.maxPrice !== it.minPrice && <span className="text-sm font-semibold"> - {money(it.maxPrice)}</span>}</>
+                      ) : (
+                        <>฿{maskPrice(it.minPrice)}{it.maxPrice !== it.minPrice && <span className="text-sm font-semibold"> - {maskPrice(it.maxPrice)}</span>}</>
+                      )}
                     </p>
+                    {!isMember && <p className="text-[10px] text-sf-muted">ยืนยันเบอร์สมาชิกเพื่อดูราคาเต็ม</p>}
                     {isMember && it.memberPrice != null && it.memberPrice < it.minPrice && (
                       <p className="truncate text-[11px] font-semibold text-emerald-600">สมาชิก ฿{money(it.memberPrice)}</p>
                     )}
@@ -927,7 +939,7 @@ export default function ShopClient({
                     </div>
                     <div className="flex flex-1 flex-col p-2">
                       <p className="text-xs text-sf-ink">{v.variant_label || v.name}</p>
-                      <p className="mt-1 text-base font-medium text-sf-primary">฿{money(v.sell_price)}</p>
+                      <p className="mt-1 text-base font-medium text-sf-primary">฿{isMember ? money(v.sell_price) : maskPrice(v.sell_price)}</p>
                       <p className="text-[11px] text-sf-muted">
                         {v.no_stock_tracking ? "พร้อมขายเสมอ" : outOfStock ? "สินค้าหมด" : `เหลือ ${v.stock_qty} ${v.unit}`}
                       </p>

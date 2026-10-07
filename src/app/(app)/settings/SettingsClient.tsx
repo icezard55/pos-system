@@ -41,6 +41,7 @@ export default function SettingsClient({
   const [webhookUrl, setWebhookUrl] = useState(initialSettings?.low_stock_webhook_url ?? "");
   const [bahtPerPoint, setBahtPerPoint] = useState(String(initialSettings?.baht_per_point ?? 100));
   const [showVat, setShowVat] = useState(initialSettings?.show_vat_on_receipt ?? true);
+  const [showTaxId, setShowTaxId] = useState(initialSettings?.show_tax_id_on_receipt ?? true);
   const [promptpayId, setPromptpayId] = useState(initialSettings?.promptpay_id ?? "");
   const [contactEmail, setContactEmail] = useState(initialSettings?.contact_email ?? "");
   const [receiptFooter, setReceiptFooter] = useState(initialSettings?.receipt_footer_text ?? "");
@@ -103,6 +104,7 @@ export default function SettingsClient({
         p_show_vat_on_receipt: showVat,
         p_promptpay_id: promptpayId.trim() || null,
         p_contact_email: contactEmail.trim() || null,
+        p_show_tax_id_on_receipt: showTaxId,
       });
       if (error) throw error;
       const { error: rxErr } = await supabase.rpc("update_receipt_extras", {
@@ -258,6 +260,15 @@ export default function SettingsClient({
           </label>
           <p className="mt-1 text-xs text-gray-400">
             ถ้าปิด ใบเสร็จจะไม่แสดงบรรทัดแยก VAT 7% ให้ลูกค้าเห็น (แต่ระบบยังคำนวณ VAT เก็บไว้ในฐานข้อมูลตามปกติ)
+          </p>
+        </div>
+        <div>
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+            <input type="checkbox" checked={showTaxId} onChange={(e) => setShowTaxId(e.target.checked)} className="h-4 w-4 rounded border-gray-300" />
+            แสดงเลขผู้เสียภาษีของร้านบนใบเสร็จ
+          </label>
+          <p className="mt-1 text-xs text-gray-400">
+            ถ้าปิด ใบเสร็จจะไม่แสดงบรรทัด &quot;เลขผู้เสียภาษี: ...&quot; ของร้าน (เลขที่กรอกไว้ด้านบนยังเก็บไว้ในระบบตามปกติ)
           </p>
         </div>
         <div>

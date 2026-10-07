@@ -124,7 +124,7 @@ export default function ReceiptClient({
             <>
               <p className="font-bold">{shopSettings.shop_name}</p>
               {shopSettings.address && <p className="text-xs text-gray-500">{shopSettings.address}</p>}
-              {shopSettings.tax_id && <p className="text-xs text-gray-500">เลขผู้เสียภาษี: {shopSettings.tax_id}</p>}
+              {shopSettings.show_tax_id_on_receipt !== false && shopSettings.tax_id && <p className="text-xs text-gray-500">เลขผู้เสียภาษี: {shopSettings.tax_id}</p>}
               {shopSettings.phone && <p className="text-xs text-gray-500">โทร. {shopSettings.phone}</p>}
               <div className="my-2 border-t border-dashed" />
             </>

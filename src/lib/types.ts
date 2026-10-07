@@ -411,6 +411,7 @@ export interface ShopSettings {
   low_stock_webhook_url: string | null;
   baht_per_point: number;
   show_vat_on_receipt: boolean;
+  show_tax_id_on_receipt?: boolean;
   promptpay_id: string | null;
   contact_email: string | null;
   receipt_footer_text?: string | null;

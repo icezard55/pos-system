@@ -57,6 +57,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
     { label: string; cost: string; price: string; qty: string; active: boolean }[]
   >([]);
   const [newBulkLabel, setNewBulkLabel] = useState("");
+  const [autoBarcode, setAutoBarcode] = useState(false);
 
   const categories = useMemo(() => {
     return Array.from(new Set(products.map((p) => (p.category ?? "").trim()).filter(Boolean))).sort((a, b) =>
@@ -117,6 +118,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
     setBulkMode(false);
     setBulkVariants([]);
     setNewBulkLabel("");
+    setAutoBarcode(false);
     setShowModal(true);
   }
 
@@ -138,9 +140,25 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
     setBulkMode(false);
     setBulkVariants([]);
     setNewBulkLabel("");
+    setAutoBarcode(false);
     setShowModal(true);
     const { data } = await supabase.from("product_barcodes").select("barcode").eq("product_id", p.id).order("barcode");
     setBarcodes((data ?? []).map((r) => r.barcode));
+  }
+
+  // สร้างบาร์โค้ดแบบ EAN-13 ที่ไม่ซ้ำกัน (prefix 20 = ใช้ภายในร้าน ตามมาตรฐาน GS1) สำหรับสินค้าที่ไม่มีบาร์โค้ดจริงจากโรงงาน
+  function genEan13(exclude: Set<string>): string {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      let digits = "20" + String(Math.floor(Math.random() * 1e10)).padStart(10, "0");
+      let sum = 0;
+      for (let i = 0; i < 12; i++) {
+        sum += Number(digits[i]) * (i % 2 === 0 ? 1 : 3);
+      }
+      const check = (10 - (sum % 10)) % 10;
+      const code = digits + check;
+      if (!exclude.has(code)) return code;
+    }
+    return "20" + String(Date.now()).slice(-11);
   }
 
   function addBulkVariant() {
@@ -302,14 +320,26 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
         const { data: insertedRows, error } = await supabase.from("products").insert(rows).select("id");
         if (error) throw error;
 
-        // บาร์โค้ดร่วม (ถ้ามีกรอกไว้) ผูกกับทุกเบอร์ที่สร้างขึ้นในกลุ่มนี้
-        const cleanBarcodes = Array.from(new Set([...barcodes, newBarcode].map((b) => b.trim()).filter(Boolean)));
-        if (cleanBarcodes.length > 0 && insertedRows && insertedRows.length > 0) {
-          const bcRows = insertedRows.flatMap((row: { id: string }) =>
-            cleanBarcodes.map((barcode) => ({ shop_id: shopId, product_id: row.id, barcode }))
-          );
+        if (autoBarcode && insertedRows && insertedRows.length > 0) {
+          // สร้างบาร์โค้ดไม่ซ้ำกันแยกให้ทุกเบอร์/สี (เผื่อสินค้าไม่มีบาร์โค้ดจริงจากโรงงาน)
+          const used = new Set<string>();
+          const bcRows = insertedRows.map((row: { id: string }) => {
+            const code = genEan13(used);
+            used.add(code);
+            return { shop_id: shopId, product_id: row.id, barcode: code };
+          });
           const { error: bcErr } = await supabase.from("product_barcodes").insert(bcRows);
           if (bcErr) throw bcErr;
+        } else {
+          // บาร์โค้ดร่วม (ถ้ามีกรอกไว้) ผูกกับทุกเบอร์ที่สร้างขึ้นในกลุ่มนี้
+          const cleanBarcodes = Array.from(new Set([...barcodes, newBarcode].map((b) => b.trim()).filter(Boolean)));
+          if (cleanBarcodes.length > 0 && insertedRows && insertedRows.length > 0) {
+            const bcRows = insertedRows.flatMap((row: { id: string }) =>
+              cleanBarcodes.map((barcode) => ({ shop_id: shopId, product_id: row.id, barcode }))
+            );
+            const { error: bcErr } = await supabase.from("product_barcodes").insert(bcRows);
+            if (bcErr) throw bcErr;
+          }
         }
 
         setShowModal(false);
@@ -970,10 +1000,20 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                     </p>
                     <input
                       placeholder="สแกนหรือพิมพ์บาร์โค้ดร่วม"
-                      className="w-full rounded-lg border px-3 py-2 text-sm"
+                      className="w-full rounded-lg border px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-400"
                       value={newBarcode}
                       onChange={(e) => setNewBarcode(e.target.value)}
+                      disabled={autoBarcode}
                     />
+                    <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                      <input
+                        type="checkbox"
+                        checked={autoBarcode}
+                        onChange={(e) => setAutoBarcode(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-gray-300"
+                      />
+                      สร้างบาร์โค้ดอัตโนมัติ (เบอร์ละ 1 เลข ไม่ซ้ำกัน — ใช้กรณีไม่มีบาร์โค้ดจริงจากโรงงาน)
+                    </label>
                   </>
                 ) : (
                   <>

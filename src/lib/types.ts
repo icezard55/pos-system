@@ -116,6 +116,7 @@ export interface Sale {
   customer_id: string | null;
   customer_tax_id: string | null;
   customer_address: string | null;
+  show_customer_info?: boolean;
   subtotal: number;
   discount: number;
   total: number;

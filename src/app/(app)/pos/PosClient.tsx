@@ -50,6 +50,7 @@ export default function PosClient({
   const [showTaxFields, setShowTaxFields] = useState(false);
   const [customerTaxId, setCustomerTaxId] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
+  const [showCustomerInfo, setShowCustomerInfo] = useState(true);
 
   // payments
   const [splitMode, setSplitMode] = useState(false);
@@ -566,6 +567,7 @@ export default function PosClient({
         p_customer_name: customerName || null,
         p_customer_tax_id: showTaxFields ? customerTaxId || null : null,
         p_customer_address: showTaxFields ? customerAddress || null : null,
+        p_show_customer_info: showCustomerInfo,
         p_channel: channel,
         p_platform_name: channel === "other" ? platformNameOther.trim() || null : null,
         p_platform_fee_pct: channel !== "store" && Number(platformFeePct) > 0 ? Number(platformFeePct) : null,
@@ -1012,6 +1014,21 @@ export default function PosClient({
           )}
           {isMember && (
             <p className="text-[11px] text-emerald-600">ลูกค้าสมาชิก — ระบบใช้ราคาสมาชิกอัตโนมัติสำหรับสินค้าที่ตั้งราคาสมาชิกไว้</p>
+          )}
+
+          <label className="flex items-center gap-2 text-xs text-gray-600">
+            <input
+              type="checkbox"
+              checked={showCustomerInfo}
+              onChange={(e) => setShowCustomerInfo(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-gray-300"
+            />
+            แสดงชื่อลูกค้าบนใบเสร็จ
+          </label>
+          {!showCustomerInfo && (
+            <p className="text-[11px] text-gray-400">
+              ถ้าปิด ใบเสร็จจะแสดงเส้นปะ ..... ให้ลูกค้ากรอกชื่อ-ที่อยู่เองแทน
+            </p>
           )}
 
           <button

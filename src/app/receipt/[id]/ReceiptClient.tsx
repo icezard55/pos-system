@@ -132,9 +132,17 @@ export default function ReceiptClient({
           <p className="text-lg font-bold">{isTaxInvoice ? "ใบกำกับภาษีอย่างย่อ" : "ใบเสร็จรับเงิน"}</p>
           <p className="text-xs text-gray-500">เลขที่บิล: {sale.sale_no}</p>
           <p className="text-xs text-gray-500">{dt.toLocaleString("th-TH")}</p>
-          {sale.customer_name && <p className="text-xs text-gray-500">ลูกค้า: {sale.customer_name}</p>}
-          {sale.customer_tax_id && <p className="text-xs text-gray-500">เลขผู้เสียภาษีลูกค้า: {sale.customer_tax_id}</p>}
-          {sale.customer_address && <p className="text-xs text-gray-500">{sale.customer_address}</p>}
+          {sale.show_customer_info === false ? (
+            (sale.customer_name || sale.customer_address) && (
+              <p className="text-xs text-gray-500">ชื่อ-ที่อยู่: .....................................................</p>
+            )
+          ) : (
+            <>
+              {sale.customer_name && <p className="text-xs text-gray-500">ลูกค้า: {sale.customer_name}</p>}
+              {sale.customer_tax_id && <p className="text-xs text-gray-500">เลขผู้เสียภาษีลูกค้า: {sale.customer_tax_id}</p>}
+              {sale.customer_address && <p className="text-xs text-gray-500">{sale.customer_address}</p>}
+            </>
+          )}
           {sale.status === "void" && (
             <p className="mt-1 inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">บิลนี้ถูกยกเลิกแล้ว</p>
           )}

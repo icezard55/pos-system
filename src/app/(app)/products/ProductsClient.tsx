@@ -303,7 +303,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
         if (error) throw error;
 
         // บาร์โค้ดร่วม (ถ้ามีกรอกไว้) ผูกกับทุกเบอร์ที่สร้างขึ้นในกลุ่มนี้
-        const cleanBarcodes = Array.from(new Set(barcodes.map((b) => b.trim()).filter(Boolean)));
+        const cleanBarcodes = Array.from(new Set([...barcodes, newBarcode].map((b) => b.trim()).filter(Boolean)));
         if (cleanBarcodes.length > 0 && insertedRows && insertedRows.length > 0) {
           const bcRows = insertedRows.flatMap((row: { id: string }) =>
             cleanBarcodes.map((barcode) => ({ shop_id: shopId, product_id: row.id, barcode }))
@@ -357,7 +357,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
 
       // sync บาร์โค้ดหลายเลข: ลบของเดิมทั้งหมดแล้วใส่ชุดปัจจุบัน (ง่ายกว่าการ diff)
       await supabase.from("product_barcodes").delete().eq("product_id", productId);
-      const cleanBarcodes = Array.from(new Set(barcodes.map((b) => b.trim()).filter(Boolean)));
+      const cleanBarcodes = Array.from(new Set([...barcodes, newBarcode].map((b) => b.trim()).filter(Boolean)));
       if (cleanBarcodes.length > 0) {
         const { error: bcErr } = await supabase
           .from("product_barcodes")

@@ -299,8 +299,19 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
           member_price: form.member_price.trim() ? Number(form.member_price) : null,
           is_active: v.active,
         }));
-        const { error } = await supabase.from("products").insert(rows);
+        const { data: insertedRows, error } = await supabase.from("products").insert(rows).select("id");
         if (error) throw error;
+
+        // บาร์โค้ดร่วม (ถ้ามีกรอกไว้) ผูกกับทุกเบอร์ที่สร้างขึ้นในกลุ่มนี้
+        const cleanBarcodes = Array.from(new Set(barcodes.map((b) => b.trim()).filter(Boolean)));
+        if (cleanBarcodes.length > 0 && insertedRows && insertedRows.length > 0) {
+          const bcRows = insertedRows.flatMap((row: { id: string }) =>
+            cleanBarcodes.map((barcode) => ({ shop_id: shopId, product_id: row.id, barcode }))
+          );
+          const { error: bcErr } = await supabase.from("product_barcodes").insert(bcRows);
+          if (bcErr) throw bcErr;
+        }
+
         setShowModal(false);
         await refresh();
       } catch (err: any) {
@@ -947,9 +958,15 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                 </div>
               </div>
 
-              {!bulkMode && (
-                <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-gray-600">บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU)</label>
+              <div className="col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-gray-600">
+                    {bulkMode ? "บาร์โค้ดร่วม (ใช้เลขเดียวกันทุกเบอร์ในกลุ่มนี้ — ไม่บังคับ)" : "บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU)"}
+                  </label>
+                  {bulkMode && (
+                    <p className="mb-1 text-[11px] text-gray-400">
+                      เหมาะกับสินค้าที่ป้ายบาร์โค้ดจากโรงงานเป็นเลขเดียวกันทุกไซส์ — ตอนสแกนที่ POS ระบบจะเด้งให้เลือกเบอร์เอง
+                    </p>
+                  )}
                   <div className="flex gap-1">
                     <input
                       placeholder="สแกนหรือพิมพ์บาร์โค้ด แล้วกด + เพิ่ม"
@@ -982,7 +999,6 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                     </div>
                   )}
                 </div>
-              )}
             </div>
             {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
             <div className="sticky -bottom-6 -mx-6 -mb-6 mt-6 flex justify-end gap-2 border-t bg-white px-6 py-4">

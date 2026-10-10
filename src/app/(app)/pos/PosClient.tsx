@@ -122,12 +122,18 @@ export default function PosClient({
   }, [products, variantPopupGroup]);
 
   // แผนที่บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU) -> สินค้า สำหรับตอนยิงสแกน
+  // บาร์โค้ดเดียวกันอาจผูกกับหลายสินค้าได้ (เช่น เสื้อนักเรียนหลายเบอร์ใช้บาร์โค้ดเดียวกันจากโรงงาน)
+  // เลยเก็บเป็น array แทนสินค้าตัวเดียว
   const barcodeMap = useMemo(() => {
-    const map = new Map<string, Product>();
+    const map = new Map<string, Product[]>();
     const byId = new Map(products.map((p) => [p.id, p]));
     for (const row of barcodes) {
       const p = byId.get(row.product_id);
-      if (p) map.set(row.barcode.trim().toLowerCase(), p);
+      if (!p) continue;
+      const key = row.barcode.trim().toLowerCase();
+      const list = map.get(key);
+      if (list) list.push(p);
+      else map.set(key, [p]);
     }
     return map;
   }, [products, barcodes]);
@@ -373,7 +379,23 @@ export default function PosClient({
   function tryAddByCode(rawCode: string) {
     const code = rawCode.trim().toLowerCase();
     if (!code) return;
-    const exact = products.find((p) => (p.sku ?? "").toLowerCase() === code) ?? barcodeMap.get(code);
+    const skuMatch = products.find((p) => (p.sku ?? "").toLowerCase() === code);
+    const bcMatches = barcodeMap.get(code) ?? [];
+
+    // บาร์โค้ดเดียวกันผูกกับหลายเบอร์ในกลุ่มเดียวกัน (เช่น เสื้อนักเรียนที่โรงงานพิมพ์บาร์โค้ดเดียวทุกไซส์)
+    // -> เด้งป๊อปอัพเลือกเบอร์แบบเดียวกับตอนกดการ์ดกลุ่มสินค้า แทนการเดาเพิ่มตัวใดตัวหนึ่งลงตะกร้าเอง
+    if (!skuMatch && bcMatches.length > 1) {
+      const group = (bcMatches[0].variant_group ?? "").trim();
+      const sameGroup = group && bcMatches.every((p) => (p.variant_group ?? "").trim() === group);
+      if (sameGroup) {
+        setVariantPopupGroup(group);
+        setScanMsg(`บาร์โค้ดนี้มีหลายเบอร์ — กรุณาเลือกเบอร์`);
+        window.setTimeout(() => setScanMsg(null), 2500);
+        return;
+      }
+    }
+
+    const exact = skuMatch ?? bcMatches[0];
     if (exact) {
       if (!exact.no_stock_tracking && exact.stock_qty <= 0) {
         setScanMsg(`"${exact.name}" สินค้าหมดสต๊อก`);

@@ -959,46 +959,59 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
               </div>
 
               <div className="col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-gray-600">
-                    {bulkMode ? "บาร์โค้ดร่วม (ใช้เลขเดียวกันทุกเบอร์ในกลุ่มนี้ — ไม่บังคับ)" : "บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU)"}
-                  </label>
-                  {bulkMode && (
+                {bulkMode ? (
+                  <>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">
+                      บาร์โค้ดร่วม (ใช้เลขเดียวกันทุกเบอร์ในกลุ่มนี้ — ไม่บังคับ)
+                    </label>
                     <p className="mb-1 text-[11px] text-gray-400">
-                      เหมาะกับสินค้าที่ป้ายบาร์โค้ดจากโรงงานเป็นเลขเดียวกันทุกไซส์ — ตอนสแกนที่ POS ระบบจะเด้งให้เลือกเบอร์เอง
+                      เหมาะกับสินค้าที่ป้ายบาร์โค้ดจากโรงงานเป็นเลขเดียวกันทุกไซส์ — พิมพ์หรือสแกนแล้วกด "บันทึก" ได้เลย ไม่ต้องกดปุ่มเพิ่ม
+                      ตอนสแกนที่ POS ระบบจะเด้งให้เลือกเบอร์เอง
                     </p>
-                  )}
-                  <div className="flex gap-1">
                     <input
-                      placeholder="สแกนหรือพิมพ์บาร์โค้ด แล้วกด + เพิ่ม"
-                      className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                      placeholder="สแกนหรือพิมพ์บาร์โค้ดร่วม"
+                      className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={newBarcode}
                       onChange={(e) => setNewBarcode(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          addBarcode();
-                        }
-                      }}
                     />
-                    <button
-                      type="button"
-                      onClick={addBarcode}
-                      className="whitespace-nowrap rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
-                    >
-                      + เพิ่ม
-                    </button>
-                  </div>
-                  {barcodes.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {barcodes.map((b) => (
-                        <span key={b} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
-                          {b}
-                          <button type="button" onClick={() => removeBarcode(b)} className="text-gray-400 hover:text-red-500">✕</button>
-                        </span>
-                      ))}
+                  </>
+                ) : (
+                  <>
+                    <label className="mb-1 block text-xs font-medium text-gray-600">บาร์โค้ดเพิ่มเติม (นอกเหนือจาก SKU)</label>
+                    <div className="flex gap-1">
+                      <input
+                        placeholder="สแกนหรือพิมพ์บาร์โค้ด แล้วกด + เพิ่ม"
+                        className="flex-1 rounded-lg border px-3 py-2 text-sm"
+                        value={newBarcode}
+                        onChange={(e) => setNewBarcode(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            addBarcode();
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={addBarcode}
+                        className="whitespace-nowrap rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
+                      >
+                        + เพิ่ม
+                      </button>
                     </div>
-                  )}
-                </div>
+                    {barcodes.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {barcodes.map((b) => (
+                          <span key={b} className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                            {b}
+                            <button type="button" onClick={() => removeBarcode(b)} className="text-gray-400 hover:text-red-500">✕</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
             {msg && <p className="mt-3 text-sm text-red-600">{msg}</p>}
             <div className="sticky -bottom-6 -mx-6 -mb-6 mt-6 flex justify-end gap-2 border-t bg-white px-6 py-4">

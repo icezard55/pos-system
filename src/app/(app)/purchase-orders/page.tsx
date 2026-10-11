@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { fetchAllRows } from "@/lib/fetchAll";
 import { createClient } from "@/lib/supabase/server";
 import PurchaseOrdersClient from "./PurchaseOrdersClient";
 
@@ -11,11 +12,9 @@ export default async function PurchaseOrdersPage() {
   if (profile?.role !== "admin") redirect("/dashboard");
 
   const { data: suppliers } = await supabase.from("suppliers").select("id, name").order("name");
-  const { data: products } = await supabase
-    .from("products")
-    .select("id, sku, name, unit, cost_price")
-    .eq("is_active", true)
-    .order("name");
+  const products = await fetchAllRows((f, t) =>
+    supabase.from("products").select("id, sku, name, unit, cost_price").eq("is_active", true).order("name").order("id").range(f, t)
+  );
   const { data: orders } = await supabase
     .from("purchase_orders")
     .select("*, suppliers(name), purchase_order_items(id, product_id, qty, unit_cost, products(name, unit))")

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import PosClient from "./PosClient";
+import { fetchAllRows } from "@/lib/fetchAll";
 
 export default async function PosPage() {
   const supabase = await createClient();
@@ -10,14 +11,13 @@ export default async function PosPage() {
   const { data: profile } = await supabase.from("profiles").select("shop_id").eq("id", user!.id).single();
   const shopId = profile?.shop_id ?? "";
 
-  const { data: products } = await supabase
-    .from("products")
-    .select("*")
-    .eq("is_active", true)
-    .order("sort_order")
-    .order("name");
+  const products = await fetchAllRows((from, to) =>
+    supabase.from("products").select("*").eq("is_active", true).order("sort_order").order("name").order("id").range(from, to)
+  );
 
-  const { data: barcodes } = await supabase.from("product_barcodes").select("product_id, barcode");
+  const barcodes = await fetchAllRows((from, to) =>
+    supabase.from("product_barcodes").select("product_id, barcode").order("id").range(from, to)
+  );
 
   const { data: shopSettings } = await supabase.from("shop_settings").select("*").single();
 

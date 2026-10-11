@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import DashboardClient, { type DashboardData } from "./DashboardClient";
 
 function startOfToday() {
   const d = new Date();
@@ -15,6 +16,14 @@ function daysUntil(dateStr: string) {
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user!.id).single();
+  const isAdmin = profile?.role === "admin";
+  const [{ data: summary }, { data: settings }] = isAdmin
+    ? await Promise.all([supabase.rpc("dashboard_summary"), supabase.from("shop_settings").select("shop_name").maybeSingle()])
+    : [{ data: null }, { data: null }];
 
   const in30Days = new Date();
   in30Days.setDate(in30Days.getDate() + 30);
@@ -47,15 +56,21 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">แดชบอร์ด</h1>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((c) => (
-          <div key={c.label} className="rounded-2xl bg-white p-6 shadow-sm">
-            <p className="text-sm text-gray-500">{c.label}</p>
-            <p className="mt-2 text-2xl font-bold text-gray-800">{c.value}</p>
+      {isAdmin && summary ? (
+        <DashboardClient data={summary as DashboardData} shopName={settings?.shop_name || "ร้านของคุณ"} />
+      ) : (
+        <>
+          <h1 className="mb-6 text-2xl font-bold">แดชบอร์ด</h1>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {cards.map((c) => (
+              <div key={c.label} className="rounded-2xl bg-white p-6 shadow-sm">
+                <p className="text-sm text-gray-500">{c.label}</p>
+                <p className="mt-2 text-2xl font-bold text-gray-800">{c.value}</p>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
       <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm">
         <h2 className="mb-4 font-semibold text-gray-800">⚠️ สินค้าสต๊อกต่ำ / ใกล้หมด</h2>

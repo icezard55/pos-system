@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { fetchAllRows } from "@/lib/fetchAll";
 import { createClient } from "@/lib/supabase/server";
 import ReportsClient from "./ReportsClient";
 
@@ -37,7 +38,7 @@ export default async function ReportsPage({
     .lte("sales.created_at", endDate.toISOString())
     .eq("sales.status", "completed");
 
-  const { data: productCategoryRows } = await supabase.from("products").select("id, category");
+  const productCategoryRows = await fetchAllRows((f, t) => supabase.from("products").select("id, category").order("id").range(f, t));
   const categoryMap: Record<string, string> = {};
   (productCategoryRows ?? []).forEach((p) => {
     categoryMap[p.id] = p.category?.trim() || "ไม่ระบุหมวดหมู่";
@@ -51,11 +52,9 @@ export default async function ReportsPage({
     .lte("received_at", endDate.toISOString())
     .order("received_at", { ascending: false });
 
-  const { data: stockValuation } = await supabase
-    .from("products")
-    .select("id, name, sku, unit, stock_qty, cost_price, sell_price")
-    .eq("is_active", true)
-    .order("name");
+  const stockValuation = await fetchAllRows((f, t) =>
+    supabase.from("products").select("id, name, sku, unit, stock_qty, cost_price, sell_price").eq("is_active", true).order("name").order("id").range(f, t)
+  );
 
   const { data: outOfStock } = await supabase.rpc("report_out_of_stock");
   const { data: accountsPayable } = await supabase.rpc("report_accounts_payable");

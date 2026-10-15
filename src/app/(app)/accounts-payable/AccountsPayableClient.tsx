@@ -11,6 +11,7 @@ interface ReceivedPO {
   payment_status: PayableStatus;
   paid_at: string | null;
   payment_note: string | null;
+  payment_link?: string | null;
   po_total: number | null;
   freight_cost: number;
   received_at: string;
@@ -64,6 +65,7 @@ interface CombinedRow {
   remaining: number;
   payments: Payment[];
   paidAt: string | null;
+  link: string | null;
 }
 
 function toLocalISODate(d: Date): string {
@@ -152,6 +154,7 @@ export default function AccountsPayableClient({
         refId: po.id,
         payments: pays,
         paidAt: po.paid_at,
+        link: po.payment_link ?? null,
         ...money(amount, po.payment_status, pays),
       };
     });
@@ -173,6 +176,7 @@ export default function AccountsPayableClient({
         refId: p.id,
         payments: pays,
         paidAt: p.paid_at,
+        link: p.payment_link ?? null,
         ...money(amount, p.payment_status, pays),
       };
     });
@@ -367,10 +371,21 @@ export default function AccountsPayableClient({
     const v = linkDraft.trim();
     if (v && !/^https?:\/\//i.test(v)) return setError("ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://");
     setError(null);
-    const { error } = await supabase.rpc("set_payment_attachment", { p_id: id, p_link: v || null });
+    const { error } = id.startsWith("row:")
+      ? await supabase.rpc("set_payable_link", {
+          p_kind: id.split(":")[1],
+          p_ref_id: id.split(":")[2],
+          p_link: v || null,
+        })
+      : await supabase.rpc("set_payment_attachment", { p_id: id, p_link: v || null });
     if (error) return setError(error.message);
     setLinkEditId(null);
     router.refresh();
+  }
+
+  function rowLinkCell(row: CombinedRow) {
+    const id = `row:${row.kind}:${row.refId}`;
+    return linkCell({ id, attachment_url: row.link } as Payment);
   }
 
   function linkCell(pm: Payment) {
@@ -700,6 +715,9 @@ export default function AccountsPayableClient({
                 {row.paymentNote && (
                   <p className="mt-1 text-xs font-medium text-green-700">หมายเหตุการจ่ายเงิน: {row.paymentNote}</p>
                 )}
+                <p className="mt-1 text-xs text-gray-500">
+                  ลิงก์หลักฐานการจ่าย (Google Drive / OneDrive){rowLinkCell(row)}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-bold text-gray-800">฿{baht(row.amount)}</p>

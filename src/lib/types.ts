@@ -296,6 +296,7 @@ export interface Payable {
   payment_status: PayableStatus;
   paid_at: string | null;
   payment_note: string | null;
+  payment_link?: string | null;
   expense_id: string | null;
   created_by: string | null;
   created_at: string;

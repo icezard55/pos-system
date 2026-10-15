@@ -63,6 +63,8 @@ export default function AccountsPayableClient({
   const supabase = createClient();
   const router = useRouter();
   const [tab, setTab] = useState<"all" | PayableStatus>("all");
+  const [creditorFilter, setCreditorFilter] = useState("");
+  const [pickedCreditor, setPickedCreditor] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,13 +109,23 @@ export default function AccountsPayableClient({
     return [...fromPO, ...fromManual].sort((a, b) => (a.date < b.date ? 1 : -1));
   }, [receivedPOs, payables]);
 
-  const filtered = tab === "all" ? combined : combined.filter((r) => r.status === tab);
+  const creditorOptions = useMemo(() => {
+    const m = new Map<string, number>();
+    combined.forEach((r) => {
+      if (r.status !== "paid") m.set(r.name, (m.get(r.name) ?? 0) + r.amount);
+      else if (!m.has(r.name)) m.set(r.name, 0);
+    });
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "th"));
+  }, [combined]);
 
-  const outstandingTotal = combined
+  const byCreditor = creditorFilter ? combined.filter((r) => r.name === creditorFilter) : combined;
+  const filtered = tab === "all" ? byCreditor : byCreditor.filter((r) => r.status === tab);
+
+  const outstandingTotal = byCreditor
     .filter((r) => r.status !== "paid")
     .reduce((s, r) => s + r.amount, 0);
-  const outstandingCount = combined.filter((r) => r.status !== "paid").length;
-  const overdueCount = combined.filter(
+  const outstandingCount = byCreditor.filter((r) => r.status !== "paid").length;
+  const overdueCount = byCreditor.filter(
     (r) => r.status !== "paid" && r.dueDate && r.dueDate < toLocalISODate(new Date())
   ).length;
 
@@ -139,6 +151,7 @@ export default function AccountsPayableClient({
       });
       if (error) throw error;
       setCreditorName("");
+      setPickedCreditor("");
       setAmount("");
       setDueDate("");
       setNote("");
@@ -265,18 +278,36 @@ export default function AccountsPayableClient({
         </div>
         <div className="rounded-2xl bg-white p-5 shadow-sm">
           <p className="text-sm text-gray-500">รวมทุกแหล่ง (ใบสั่งซื้อ + หนี้อื่นๆ) ที่แสดง</p>
-          <p className="mt-1 text-2xl font-bold text-gray-700">{combined.length} รายการ</p>
+          <p className="mt-1 text-2xl font-bold text-gray-700">{byCreditor.length} รายการ</p>
         </div>
       </div>
 
       {showAdd && (
         <form onSubmit={handleAdd} className="mb-6 grid grid-cols-1 gap-2 rounded-2xl bg-white p-5 shadow-sm sm:grid-cols-4">
-          <input
-            value={creditorName}
-            onChange={(e) => setCreditorName(e.target.value)}
-            placeholder="ชื่อเจ้าหนี้ (เช่น ผู้ให้เช่า, ธนาคาร, ผู้ให้บริการ)"
-            className="rounded-lg border px-3 py-2 text-sm sm:col-span-2"
-          />
+          <div className="flex gap-2 sm:col-span-2">
+            <select
+              value={pickedCreditor}
+              onChange={(e) => {
+                setPickedCreditor(e.target.value);
+                setCreditorName(e.target.value);
+              }}
+              className="w-40 shrink-0 rounded-lg border px-2 py-2 text-sm"
+            >
+              <option value="">เลือกเจ้าหนี้...</option>
+              {creditorOptions.map(([n]) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+            <input
+              value={creditorName}
+              onChange={(e) => {
+                setCreditorName(e.target.value);
+                setPickedCreditor("");
+              }}
+              placeholder="หรือพิมพ์ชื่อเจ้าหนี้ใหม่"
+              className="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm"
+            />
+          </div>
           <input
             type="number"
             min={0}
@@ -313,7 +344,19 @@ export default function AccountsPayableClient({
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <select
+          value={creditorFilter}
+          onChange={(e) => setCreditorFilter(e.target.value)}
+          className="rounded-lg border bg-white px-3 py-1.5 text-xs font-medium"
+        >
+          <option value="">เจ้าหนี้ทั้งหมด ({creditorOptions.length})</option>
+          {creditorOptions.map(([n, owed]) => (
+            <option key={n} value={n}>
+              {n}{owed > 0 ? ` — ค้าง ฿${owed.toLocaleString("th-TH", { minimumFractionDigits: 2 })}` : ""}
+            </option>
+          ))}
+        </select>
         {TABS.map((t) => (
           <button
             key={t.key}

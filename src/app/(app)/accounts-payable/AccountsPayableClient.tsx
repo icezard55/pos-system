@@ -102,6 +102,8 @@ export default function AccountsPayableClient({
   const [payMethod, setPayMethod] = useState(METHODS[0]);
   const [payNote, setPayNote] = useState("");
   const [payLink, setPayLink] = useState("");
+  const [linkEditId, setLinkEditId] = useState<string | null>(null);
+  const [linkDraft, setLinkDraft] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [pickedCreditor, setPickedCreditor] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -361,6 +363,49 @@ export default function AccountsPayableClient({
     }
   }
 
+  async function saveLink(id: string) {
+    const v = linkDraft.trim();
+    if (v && !/^https?:\/\//i.test(v)) return setError("ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://");
+    setError(null);
+    const { error } = await supabase.rpc("set_payment_attachment", { p_id: id, p_link: v || null });
+    if (error) return setError(error.message);
+    setLinkEditId(null);
+    router.refresh();
+  }
+
+  function linkCell(pm: Payment) {
+    if (linkEditId === pm.id) {
+      return (
+        <span className="mt-1 flex w-full flex-wrap items-center gap-1">
+          <input
+            autoFocus
+            value={linkDraft}
+            onChange={(e) => setLinkDraft(e.target.value)}
+            placeholder="https://drive.google.com/..."
+            className="min-w-[14rem] flex-1 rounded-lg border bg-white px-2 py-1 text-xs"
+          />
+          <button onClick={() => saveLink(pm.id)} className="rounded-lg bg-brand px-2 py-1 text-xs font-medium text-white">บันทึก</button>
+          <button onClick={() => setLinkEditId(null)} className="rounded-lg border bg-white px-2 py-1 text-xs">ยกเลิก</button>
+        </span>
+      );
+    }
+    return (
+      <span className="ml-2 inline-flex items-center gap-2">
+        {pm.attachment_url ? (
+          <a href={pm.attachment_url} target="_blank" rel="noopener noreferrer" className="font-medium text-brand hover:underline">🔗 เปิดไฟล์แนบ</a>
+        ) : (
+          <span className="text-gray-400">ลิงก์: -</span>
+        )}
+        <button
+          onClick={() => { setLinkEditId(pm.id); setLinkDraft(pm.attachment_url ?? ""); }}
+          className="text-gray-500 underline hover:text-brand"
+        >
+          {pm.attachment_url ? "แก้ลิงก์" : "+ เพิ่มลิงก์"}
+        </button>
+      </span>
+    );
+  }
+
   async function deletePayment(id: string) {
     if (!confirm("ลบรายการจ่ายเงินนี้? ยอดคงค้างจะกลับมา" )) return;
     setError(null);
@@ -584,9 +629,7 @@ export default function AccountsPayableClient({
                   <td className="px-4 py-3 text-gray-500">{pm.method ?? "-"}</td>
                   <td className="px-4 py-3 text-gray-500">
                     {pm.note}
-                    {pm.attachment_url && (
-                      <a href={pm.attachment_url} target="_blank" rel="noopener noreferrer" className="ml-2 font-medium text-brand hover:underline">🔗 ไฟล์แนบ</a>
-                    )}
+                    {linkCell(pm)}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-emerald-700">{baht(Number(pm.amount))}</td>
                   <td className="px-4 py-3 text-right">
@@ -761,9 +804,7 @@ export default function AccountsPayableClient({
                     <li key={pm.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
                       <span className="text-gray-600">
                         {new Date(pm.paid_date).toLocaleDateString("th-TH")} · {pm.method ?? "-"} · {pm.note}
-                        {pm.attachment_url && (
-                          <a href={pm.attachment_url} target="_blank" rel="noopener noreferrer" className="ml-2 font-medium text-brand hover:underline">🔗 เปิดไฟล์แนบ</a>
-                        )}
+                        {linkCell(pm)}
                       </span>
                       <span className="flex items-center gap-3">
                         <span className="font-semibold text-emerald-700">฿{baht(Number(pm.amount))}</span>

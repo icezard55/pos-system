@@ -241,6 +241,7 @@ export interface Supplier {
   phone: string | null;
   address: string | null;
   note: string | null;
+  credit_days?: number;
   created_at: string;
 }
 

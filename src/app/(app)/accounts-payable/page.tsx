@@ -18,13 +18,21 @@ export default async function AccountsPayablePage() {
 
   const { data: receivedPOs } = await supabase
     .from("purchase_orders")
-    .select("id, supplier_invoice_no, payment_status, paid_at, payment_note, po_total, freight_cost, received_at, note, suppliers(name)")
+    .select("id, supplier_invoice_no, payment_status, paid_at, payment_note, po_total, freight_cost, received_at, note, suppliers(name, credit_days)")
     .eq("status", "received")
     .order("received_at", { ascending: false })
     .limit(300);
 
+  const { data: payments } = await supabase
+    .from("payable_payments")
+    .select("id, kind, ref_id, amount, paid_date, method, note, created_at")
+    .order("paid_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(2000);
+
   return (
     <AccountsPayableClient
+      payments={(payments as any) ?? []}
       payables={payables ?? []}
       receivedPOs={(receivedPOs as any) ?? []}
       shopId={profile?.shop_id ?? ""}

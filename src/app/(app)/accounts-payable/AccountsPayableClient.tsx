@@ -15,13 +15,36 @@ interface ReceivedPO {
   freight_cost: number;
   received_at: string;
   note: string | null;
-  suppliers: { name: string } | { name: string }[] | null;
+  suppliers: SupRef | SupRef[] | null;
 }
 
-function oneName(v: { name: string } | { name: string }[] | null): string {
-  if (!v) return "-";
-  return Array.isArray(v) ? v[0]?.name ?? "-" : v.name;
+type SupRef = { name: string; credit_days?: number | null };
+
+interface Payment {
+  id: string;
+  kind: "po" | "manual";
+  ref_id: string;
+  amount: number;
+  paid_date: string;
+  method: string | null;
+  note: string;
+  created_at: string;
 }
+
+function oneSup(v: SupRef | SupRef[] | null): SupRef | null {
+  if (!v) return null;
+  return Array.isArray(v) ? v[0] ?? null : v;
+}
+function oneName(v: SupRef | SupRef[] | null): string {
+  return oneSup(v)?.name ?? "-";
+}
+function addDays(iso: string, days: number): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + days);
+  return toLocalISODate(d);
+}
+const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const METHODS = ["โอนเงิน", "เงินสด", "เช็ค", "อื่นๆ"];
 
 interface CombinedRow {
   key: string;
@@ -35,6 +58,11 @@ interface CombinedRow {
   paymentNote: string | null;
   invoiceNo: string | null;
   payable?: Payable;
+  refId: string;
+  paid: number;
+  remaining: number;
+  payments: Payment[];
+  paidAt: string | null;
 }
 
 function toLocalISODate(d: Date): string {
@@ -55,7 +83,9 @@ export default function AccountsPayableClient({
   payables,
   receivedPOs,
   shopId,
+  payments,
 }: {
+  payments: Payment[];
   payables: Payable[];
   receivedPOs: ReceivedPO[];
   shopId: string;
@@ -64,6 +94,13 @@ export default function AccountsPayableClient({
   const router = useRouter();
   const [tab, setTab] = useState<"all" | PayableStatus>("all");
   const [creditorFilter, setCreditorFilter] = useState("");
+  const [view, setView] = useState<"debts" | "history">("debts");
+  const [payingKey, setPayingKey] = useState<string | null>(null);
+  const [payAmount, setPayAmount] = useState("");
+  const [payDate, setPayDate] = useState("");
+  const [payMethod, setPayMethod] = useState(METHODS[0]);
+  const [payNote, setPayNote] = useState("");
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [pickedCreditor, setPickedCreditor] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,33 +118,62 @@ export default function AccountsPayableClient({
   const [editingStatusKey, setEditingStatusKey] = useState<string | null>(null);
 
   const combined: CombinedRow[] = useMemo(() => {
-    const fromPO: CombinedRow[] = receivedPOs.map((po) => ({
-      key: `po-${po.id}`,
-      kind: "po",
-      name: oneName(po.suppliers),
-      amount: Number(po.po_total ?? 0),
-      status: po.payment_status,
-      date: po.received_at,
-      dueDate: null,
-      note: po.note,
-      paymentNote: po.payment_note,
-      invoiceNo: po.supplier_invoice_no,
-    }));
-    const fromManual: CombinedRow[] = payables.map((p) => ({
-      key: `manual-${p.id}`,
-      kind: "manual",
-      name: p.creditor_name,
-      amount: Number(p.amount),
-      status: p.payment_status,
-      date: p.created_at,
-      dueDate: p.due_date,
-      note: p.note,
-      paymentNote: p.payment_note,
-      invoiceNo: null,
-      payable: p,
-    }));
+    const byRef = new Map<string, Payment[]>();
+    payments.forEach((pm) => {
+      const k = `${pm.kind}-${pm.ref_id}`;
+      byRef.set(k, [...(byRef.get(k) ?? []), pm]);
+    });
+    const money = (amount: number, status: PayableStatus, pays: Payment[]) => {
+      const sum = pays.reduce((t, x) => t + Number(x.amount), 0);
+      // รายการเก่าที่กด "จ่ายแล้ว" ก่อนมีระบบแบ่งจ่าย ไม่มีประวัติ → ถือว่าจ่ายเต็ม
+      const paid = status === "paid" && pays.length === 0 ? amount : sum;
+      return { paid, remaining: status === "paid" ? 0 : Math.max(amount - paid, 0) };
+    };
+    const fromPO: CombinedRow[] = receivedPOs.map((po) => {
+      const amount = Number(po.po_total ?? 0);
+      const pays = byRef.get(`po-${po.id}`) ?? [];
+      const sup = oneSup(po.suppliers);
+      const credit = Number(sup?.credit_days ?? 0);
+      return {
+        key: `po-${po.id}`,
+        kind: "po" as const,
+        name: sup?.name ?? "-",
+        amount,
+        status: po.payment_status,
+        date: po.received_at,
+        dueDate: credit > 0 ? addDays(po.received_at, credit) : null,
+        note: po.note,
+        paymentNote: po.payment_note,
+        invoiceNo: po.supplier_invoice_no,
+        refId: po.id,
+        payments: pays,
+        paidAt: po.paid_at,
+        ...money(amount, po.payment_status, pays),
+      };
+    });
+    const fromManual: CombinedRow[] = payables.map((p) => {
+      const amount = Number(p.amount);
+      const pays = byRef.get(`manual-${p.id}`) ?? [];
+      return {
+        key: `manual-${p.id}`,
+        kind: "manual" as const,
+        name: p.creditor_name,
+        amount,
+        status: p.payment_status,
+        date: p.created_at,
+        dueDate: p.due_date,
+        note: p.note,
+        paymentNote: p.payment_note,
+        invoiceNo: null,
+        payable: p,
+        refId: p.id,
+        payments: pays,
+        paidAt: p.paid_at,
+        ...money(amount, p.payment_status, pays),
+      };
+    });
     return [...fromPO, ...fromManual].sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [receivedPOs, payables]);
+  }, [receivedPOs, payables, payments]);
 
   const creditorOptions = useMemo(() => {
     const m = new Map<string, number>();
@@ -121,13 +187,51 @@ export default function AccountsPayableClient({
   const byCreditor = creditorFilter ? combined.filter((r) => r.name === creditorFilter) : combined;
   const filtered = tab === "all" ? byCreditor : byCreditor.filter((r) => r.status === tab);
 
-  const outstandingTotal = byCreditor
-    .filter((r) => r.status !== "paid")
-    .reduce((s, r) => s + r.amount, 0);
-  const outstandingCount = byCreditor.filter((r) => r.status !== "paid").length;
-  const overdueCount = byCreditor.filter(
-    (r) => r.status !== "paid" && r.dueDate && r.dueDate < toLocalISODate(new Date())
-  ).length;
+  const todayIso = toLocalISODate(new Date());
+  const in7Iso = addDays(todayIso, 7);
+  const monthPrefix = todayIso.slice(0, 7);
+  const open = byCreditor.filter((r) => r.status !== "paid");
+  const outstandingTotal = open.reduce((s, r) => s + r.remaining, 0);
+  const outstandingCount = open.length;
+  const overdue = open.filter((r) => r.dueDate && r.dueDate < todayIso);
+  const overdueCount = overdue.length;
+  const overdueTotal = overdue.reduce((s, r) => s + r.remaining, 0);
+  const due7 = open.filter((r) => r.dueDate && r.dueDate <= in7Iso);
+  const due7Total = due7.reduce((s, r) => s + r.remaining, 0);
+  const paidThisMonth =
+    payments
+      .filter((pm) => pm.paid_date.startsWith(monthPrefix) && (!creditorFilter || byCreditor.some((r) => r.refId === pm.ref_id)))
+      .reduce((t, pm) => t + Number(pm.amount), 0) +
+    byCreditor
+      .filter((r) => r.status === "paid" && r.payments.length === 0 && r.paidAt && toLocalISODate(new Date(r.paidAt)).startsWith(monthPrefix))
+      .reduce((t, r) => t + r.amount, 0);
+  const aging = useMemo(() => {
+    const b = [
+      { label: "ยังไม่ครบกำหนด", color: "#10b981", n: 0, v: 0 },
+      { label: "เกิน 1–30 วัน", color: "#f59e0b", n: 0, v: 0 },
+      { label: "เกิน 31–60 วัน", color: "#f97316", n: 0, v: 0 },
+      { label: "เกิน 61–90 วัน", color: "#ef4444", n: 0, v: 0 },
+      { label: "เกิน 90 วัน", color: "#991b1b", n: 0, v: 0 },
+    ];
+    open.forEach((r) => {
+      let i = 0;
+      if (r.dueDate && r.dueDate < todayIso) {
+        const days = Math.floor((new Date(todayIso).getTime() - new Date(r.dueDate).getTime()) / 86400000);
+        i = days <= 30 ? 1 : days <= 60 ? 2 : days <= 90 ? 3 : 4;
+      }
+      b[i].n += 1;
+      b[i].v += r.remaining;
+    });
+    return b;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [byCreditor, todayIso]);
+  const agingMax = Math.max(1, ...aging.map((a) => a.v));
+  const historyRows = useMemo(() => {
+    const nameByRef = new Map(combined.map((r) => [`${r.kind}-${r.refId}`, r.name]));
+    return payments
+      .map((pm) => ({ ...pm, name: nameByRef.get(`${pm.kind}-${pm.ref_id}`) ?? "-" }))
+      .filter((pm) => !creditorFilter || pm.name === creditorFilter);
+  }, [payments, combined, creditorFilter]);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -165,10 +269,15 @@ export default function AccountsPayableClient({
   }
 
   async function handleStatusChange(row: CombinedRow, status: PayableStatus) {
+    if (status === "paid") {
+      openPay(row);
+      setEditingStatusKey(null);
+      return;
+    }
     let note: string | null = null;
-    if (status === "paid" || status === "pending_transfer") {
+    if (status === "pending_transfer") {
       // บังคับกรอกหมายเหตุทุกครั้งที่กดจ่ายแล้ว หรือรอโอน (เช่น จ่าย/โอนด้วยวิธีไหน ให้ใคร)
-      const label = status === "paid" ? "จ่ายแล้ว" : "รอโอน";
+      const label = "รอโอน";
       const entered = window.prompt(`ระบุหมายเหตุสำหรับสถานะ "${label}" ให้ "${row.name}" (บังคับกรอก):`);
       if (entered === null) return; // ยกเลิก
       if (!entered.trim()) {
@@ -177,7 +286,7 @@ export default function AccountsPayableClient({
       }
       note = entered.trim();
     }
-    if (row.status === "paid" && status !== "paid") {
+    if (row.status === "paid" && (status as string) !== "paid") {
       const ok = confirm(
         row.kind === "manual"
           ? `เปลี่ยนสถานะ "${row.name}" จาก "จ่ายแล้ว" กลับเป็น "${PAYABLE_STATUS_LABEL[status]}" ใช่หรือไม่? ระบบจะลบรายจ่ายที่บันทึกไว้อัตโนมัติออกด้วย`
@@ -210,6 +319,49 @@ export default function AccountsPayableClient({
     } finally {
       setBusyKey(null);
     }
+  }
+
+  function openPay(row: CombinedRow) {
+    setPayingKey(row.key);
+    setPayAmount(String(Number(row.remaining.toFixed(2))));
+    setPayDate(todayIso);
+    setPayMethod(METHODS[0]);
+    setPayNote("");
+    setError(null);
+  }
+
+  async function submitPayment(row: CombinedRow) {
+    const amt = Number(payAmount);
+    if (!amt || amt <= 0) return setError("กรุณากรอกจำนวนเงินที่จ่าย");
+    if (amt > row.remaining + 0.005) return setError(`จำนวนเงินเกินยอดคงค้าง (฿${baht(row.remaining)})`);
+    if (!payNote.trim()) return setError("กรุณากรอกหมายเหตุการจ่ายเงิน (เช่น โอนให้ใคร / เลขที่สลิป)");
+    setBusyKey(row.key);
+    setError(null);
+    try {
+      const { error } = await supabase.rpc("record_payable_payment", {
+        p_kind: row.kind,
+        p_ref_id: row.refId,
+        p_amount: amt,
+        p_date: payDate || todayIso,
+        p_method: payMethod,
+        p_note: payNote.trim(),
+      });
+      if (error) throw error;
+      setPayingKey(null);
+      router.refresh();
+    } catch (err: any) {
+      setError(err.message ?? "บันทึกการจ่ายไม่สำเร็จ");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function deletePayment(id: string) {
+    if (!confirm("ลบรายการจ่ายเงินนี้? ยอดคงค้างจะกลับมา" )) return;
+    setError(null);
+    const { error } = await supabase.rpc("delete_payable_payment", { p_id: id });
+    if (error) return setError(error.message);
+    router.refresh();
   }
 
   function startEditNote(row: CombinedRow) {
@@ -266,20 +418,47 @@ export default function AccountsPayableClient({
         </button>
       </div>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">เจ้าหนี้คงค้างทั้งหมด</p>
-          <p className="mt-1 text-2xl font-bold text-red-600">฿{outstandingTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
-          <p className="mt-1 text-xs text-gray-400">{outstandingCount} รายการ</p>
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <p className="text-xs text-gray-500">เจ้าหนี้คงค้างทั้งหมด</p>
+          <p className="mt-1 text-xl font-bold text-red-600 sm:text-2xl">฿{baht(outstandingTotal)}</p>
+          <p className="mt-1 text-[11px] text-gray-400">{outstandingCount} รายการที่ยังจ่ายไม่ครบ</p>
         </div>
-        <div className="rounded-2xl bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">เกินกำหนดชำระ</p>
-          <p className="mt-1 text-2xl font-bold text-orange-600">{overdueCount} รายการ</p>
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <p className="text-xs text-gray-500">ครบกำหนดภายใน 7 วัน</p>
+          <p className="mt-1 text-xl font-bold text-amber-600 sm:text-2xl">฿{baht(due7Total)}</p>
+          <p className="mt-1 text-[11px] text-gray-400">{due7.length} รายการ (รวมที่เกินกำหนด) — เตรียมเงินจ่าย</p>
         </div>
-        <div className="rounded-2xl bg-white p-5 shadow-sm">
-          <p className="text-sm text-gray-500">รวมทุกแหล่ง (ใบสั่งซื้อ + หนี้อื่นๆ) ที่แสดง</p>
-          <p className="mt-1 text-2xl font-bold text-gray-700">{byCreditor.length} รายการ</p>
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <p className="text-xs text-gray-500">เกินกำหนดชำระ</p>
+          <p className="mt-1 text-xl font-bold text-orange-600 sm:text-2xl">฿{baht(overdueTotal)}</p>
+          <p className="mt-1 text-[11px] text-gray-400">{overdueCount} รายการ — เสี่ยงต่อความสัมพันธ์ผู้ขาย</p>
         </div>
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <p className="text-xs text-gray-500">จ่ายชำระเดือนนี้</p>
+          <p className="mt-1 text-xl font-bold text-emerald-600 sm:text-2xl">฿{baht(paidThisMonth)}</p>
+          <p className="mt-1 text-[11px] text-gray-400">ทั้งหมด {byCreditor.length} รายการในระบบ</p>
+        </div>
+      </div>
+
+      <div className="mb-6 rounded-2xl bg-white p-5 shadow-sm">
+        <h2 className="mb-3 font-semibold text-gray-800">อายุหนี้ (นับจากวันครบกำหนด)</h2>
+        <div className="space-y-2">
+          {aging.map((a) => (
+            <div key={a.label} className="flex items-center gap-3 text-xs">
+              <span className="w-28 shrink-0 text-gray-600">{a.label}</span>
+              <div className="h-5 flex-1 overflow-hidden rounded bg-gray-100">
+                <div className="h-full rounded" style={{ width: `${(a.v / agingMax) * 100}%`, background: a.color, minWidth: a.v > 0 ? 4 : 0 }} />
+              </div>
+              <span className="w-44 shrink-0 text-right text-gray-700">
+                ฿{baht(a.v)} <span className="text-gray-400">· {a.n} รายการ</span>
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] text-gray-400">
+          รายการที่ไม่มีวันครบกำหนดนับเป็น "ยังไม่ครบกำหนด" — ตั้งเครดิต (วัน) ที่หน้า "ผู้จัดจำหน่าย" เพื่อให้ระบบคำนวณวันครบกำหนดของใบสั่งซื้ออัตโนมัติ
+        </p>
       </div>
 
       {showAdd && (
@@ -344,6 +523,15 @@ export default function AccountsPayableClient({
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
+      <div className="mb-3 flex gap-2 border-b text-sm">
+        <button onClick={() => setView("debts")} className={`-mb-px border-b-2 px-3 py-2 font-medium ${view === "debts" ? "border-brand text-brand" : "border-transparent text-gray-500"}`}>
+          รายการเจ้าหนี้
+        </button>
+        <button onClick={() => setView("history")} className={`-mb-px border-b-2 px-3 py-2 font-medium ${view === "history" ? "border-brand text-brand" : "border-transparent text-gray-500"}`}>
+          ประวัติการจ่ายเงิน ({historyRows.length})
+        </button>
+      </div>
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <select
           value={creditorFilter}
@@ -357,7 +545,7 @@ export default function AccountsPayableClient({
             </option>
           ))}
         </select>
-        {TABS.map((t) => (
+        {view === "debts" && TABS.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -370,7 +558,39 @@ export default function AccountsPayableClient({
         ))}
       </div>
 
-      <div className="space-y-3">
+      {view === "history" && (
+        <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-gray-50 text-left text-gray-500">
+                <th className="px-4 py-3">วันที่จ่าย</th>
+                <th className="px-4 py-3">เจ้าหนี้</th>
+                <th className="px-4 py-3">วิธีจ่าย</th>
+                <th className="px-4 py-3">หมายเหตุ</th>
+                <th className="px-4 py-3 text-right">จำนวนเงิน (฿)</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {historyRows.map((pm) => (
+                <tr key={pm.id} className="border-b last:border-0">
+                  <td className="whitespace-nowrap px-4 py-3 text-gray-600">{new Date(pm.paid_date).toLocaleDateString("th-TH")}</td>
+                  <td className="px-4 py-3 font-medium">{pm.name}</td>
+                  <td className="px-4 py-3 text-gray-500">{pm.method ?? "-"}</td>
+                  <td className="px-4 py-3 text-gray-500">{pm.note}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-emerald-700">{baht(Number(pm.amount))}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => deletePayment(pm.id)} className="text-xs text-red-500 hover:underline">ลบ</button>
+                  </td>
+                </tr>
+              ))}
+              {historyRows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-gray-400">ยังไม่มีประวัติการจ่ายเงิน</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className={`space-y-3 ${view === "history" ? "hidden" : ""}`}>
         {filtered.map((row) => (
           <div key={row.key} className="rounded-2xl bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -429,9 +649,24 @@ export default function AccountsPayableClient({
                 )}
               </div>
               <div className="text-right">
-                <p className="text-lg font-bold text-gray-800">฿{row.amount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+                <p className="text-lg font-bold text-gray-800">฿{baht(row.amount)}</p>
+                {row.status !== "paid" && row.paid > 0 && (
+                  <p className="text-xs text-gray-500">
+                    จ่ายแล้ว <span className="text-emerald-700">฿{baht(row.paid)}</span> · คงค้าง <span className="font-semibold text-red-600">฿{baht(row.remaining)}</span>
+                  </p>
+                )}
                 <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
-                  {row.status === "paid" && editingStatusKey !== row.key ? (
+                  {row.status !== "paid" && payingKey !== row.key && (
+                    <button onClick={() => openPay(row)} className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700">
+                      {row.paid > 0 ? "จ่ายเพิ่ม" : "บันทึกการจ่าย"}
+                    </button>
+                  )}
+                  {row.payments.length > 0 && (
+                    <button onClick={() => setExpandedKey(expandedKey === row.key ? null : row.key)} className="text-xs font-medium text-brand hover:underline">
+                      {expandedKey === row.key ? "ซ่อนประวัติ" : `ประวัติจ่าย (${row.payments.length})`}
+                    </button>
+                  )}
+                  {row.payments.length > 0 ? null : row.status === "paid" && editingStatusKey !== row.key ? (
                     <button
                       onClick={() => setEditingStatusKey(row.key)}
                       className="text-xs font-medium text-brand hover:underline"
@@ -465,7 +700,7 @@ export default function AccountsPayableClient({
                       แก้ไข
                     </button>
                   )}
-                  {row.kind === "manual" && row.status !== "paid" && (
+                  {row.kind === "manual" && row.status !== "paid" && row.payments.length === 0 && (
                     <button onClick={() => handleDeleteManual(row)} className="text-xs font-medium text-red-500 hover:underline">
                       ลบ
                     </button>
@@ -473,6 +708,55 @@ export default function AccountsPayableClient({
                 </div>
               </div>
             </div>
+
+            {payingKey === row.key && (
+              <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3 sm:grid-cols-4">
+                <label className="text-xs text-gray-600">
+                  จำนวนเงินที่จ่าย (คงค้าง ฿{baht(row.remaining)})
+                  <input type="number" min={0} step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm" />
+                </label>
+                <label className="text-xs text-gray-600">
+                  วันที่จ่าย
+                  <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm" />
+                </label>
+                <label className="text-xs text-gray-600">
+                  วิธีจ่าย
+                  <select value={payMethod} onChange={(e) => setPayMethod(e.target.value)} className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm">
+                    {METHODS.map((m) => <option key={m}>{m}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs text-gray-600">
+                  หมายเหตุ (บังคับ)
+                  <input value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="เช่น โอนเข้า SCB / เลขสลิป" className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm" />
+                </label>
+                <div className="flex gap-2 sm:col-span-4">
+                  <button disabled={busyKey === row.key} onClick={() => submitPayment(row)} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
+                    {busyKey === row.key ? "กำลังบันทึก..." : "บันทึกการจ่าย"}
+                  </button>
+                  <button onClick={() => setPayingKey(null)} className="rounded-lg border bg-white px-4 py-2 text-xs">ยกเลิก</button>
+                  <button type="button" onClick={() => setPayAmount(String(Number(row.remaining.toFixed(2))))} className="ml-auto text-xs text-brand hover:underline">จ่ายเต็มจำนวน</button>
+                </div>
+              </div>
+            )}
+
+            {expandedKey === row.key && row.payments.length > 0 && (
+              <div className="mt-3 rounded-xl bg-gray-50 p-3">
+                <p className="mb-1 text-xs font-medium text-gray-600">ประวัติการจ่ายเงิน</p>
+                <ul className="divide-y text-xs">
+                  {row.payments.map((pm) => (
+                    <li key={pm.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                      <span className="text-gray-600">
+                        {new Date(pm.paid_date).toLocaleDateString("th-TH")} · {pm.method ?? "-"} · {pm.note}
+                      </span>
+                      <span className="flex items-center gap-3">
+                        <span className="font-semibold text-emerald-700">฿{baht(Number(pm.amount))}</span>
+                        <button onClick={() => deletePayment(pm.id)} className="text-red-500 hover:underline">ลบ</button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         ))}
         {filtered.length === 0 && <p className="py-10 text-center text-sm text-gray-400">ไม่มีรายการ</p>}

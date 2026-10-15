@@ -25,7 +25,7 @@ export default async function AccountsPayablePage() {
 
   const { data: payments } = await supabase
     .from("payable_payments")
-    .select("id, kind, ref_id, amount, paid_date, method, note, created_at")
+    .select("id, kind, ref_id, amount, paid_date, method, note, attachment_url, created_at")
     .order("paid_date", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(2000);

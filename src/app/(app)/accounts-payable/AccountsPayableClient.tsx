@@ -28,6 +28,7 @@ interface Payment {
   paid_date: string;
   method: string | null;
   note: string;
+  attachment_url: string | null;
   created_at: string;
 }
 
@@ -100,6 +101,7 @@ export default function AccountsPayableClient({
   const [payDate, setPayDate] = useState("");
   const [payMethod, setPayMethod] = useState(METHODS[0]);
   const [payNote, setPayNote] = useState("");
+  const [payLink, setPayLink] = useState("");
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [pickedCreditor, setPickedCreditor] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -327,6 +329,7 @@ export default function AccountsPayableClient({
     setPayDate(todayIso);
     setPayMethod(METHODS[0]);
     setPayNote("");
+    setPayLink("");
     setError(null);
   }
 
@@ -335,10 +338,12 @@ export default function AccountsPayableClient({
     if (!amt || amt <= 0) return setError("กรุณากรอกจำนวนเงินที่จ่าย");
     if (amt > row.remaining + 0.005) return setError(`จำนวนเงินเกินยอดคงค้าง (฿${baht(row.remaining)})`);
     if (!payNote.trim()) return setError("กรุณากรอกหมายเหตุการจ่ายเงิน (เช่น โอนให้ใคร / เลขที่สลิป)");
+    if (payLink.trim() && !/^https?:\/\//i.test(payLink.trim())) return setError("ลิงก์ต้องขึ้นต้นด้วย http:// หรือ https://");
     setBusyKey(row.key);
     setError(null);
     try {
       const { error } = await supabase.rpc("record_payable_payment", {
+        p_link: payLink.trim() || null,
         p_kind: row.kind,
         p_ref_id: row.refId,
         p_amount: amt,
@@ -577,7 +582,12 @@ export default function AccountsPayableClient({
                   <td className="whitespace-nowrap px-4 py-3 text-gray-600">{new Date(pm.paid_date).toLocaleDateString("th-TH")}</td>
                   <td className="px-4 py-3 font-medium">{pm.name}</td>
                   <td className="px-4 py-3 text-gray-500">{pm.method ?? "-"}</td>
-                  <td className="px-4 py-3 text-gray-500">{pm.note}</td>
+                  <td className="px-4 py-3 text-gray-500">
+                    {pm.note}
+                    {pm.attachment_url && (
+                      <a href={pm.attachment_url} target="_blank" rel="noopener noreferrer" className="ml-2 font-medium text-brand hover:underline">🔗 ไฟล์แนบ</a>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right font-semibold text-emerald-700">{baht(Number(pm.amount))}</td>
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => deletePayment(pm.id)} className="text-xs text-red-500 hover:underline">ลบ</button>
@@ -729,6 +739,10 @@ export default function AccountsPayableClient({
                   หมายเหตุ (บังคับ)
                   <input value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="เช่น โอนเข้า SCB / เลขสลิป" className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm" />
                 </label>
+                <label className="text-xs text-gray-600 sm:col-span-4">
+                  ลิงก์หลักฐาน เช่น Google Drive / OneDrive (ไม่บังคับ)
+                  <input value={payLink} onChange={(e) => setPayLink(e.target.value)} placeholder="https://drive.google.com/..." className="mt-1 w-full rounded-lg border bg-white px-3 py-2 text-sm" />
+                </label>
                 <div className="flex gap-2 sm:col-span-4">
                   <button disabled={busyKey === row.key} onClick={() => submitPayment(row)} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60">
                     {busyKey === row.key ? "กำลังบันทึก..." : "บันทึกการจ่าย"}
@@ -747,6 +761,9 @@ export default function AccountsPayableClient({
                     <li key={pm.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
                       <span className="text-gray-600">
                         {new Date(pm.paid_date).toLocaleDateString("th-TH")} · {pm.method ?? "-"} · {pm.note}
+                        {pm.attachment_url && (
+                          <a href={pm.attachment_url} target="_blank" rel="noopener noreferrer" className="ml-2 font-medium text-brand hover:underline">🔗 เปิดไฟล์แนบ</a>
+                        )}
                       </span>
                       <span className="flex items-center gap-3">
                         <span className="font-semibold text-emerald-700">฿{baht(Number(pm.amount))}</span>

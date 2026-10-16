@@ -1481,9 +1481,10 @@ export default function SalesClient({
                         {SALE_PAYMENT_STATUS_LABEL[s.payment_status]}
                       </span>
                     )}
-                    {s.platform_fee_amount > 0 && (
-                      <span className="text-[10px] text-gray-400">
-                        ค่าธรรมเนียม ฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                    {isAdmin && !isVoid && s.platform_fee_amount > 0 && (
+                      <span className="text-[11px] text-gray-500">
+                        หักค่าธรรมเนียม <span className="text-red-500">-฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>{" "}
+                        · เงินเข้า <span className="font-semibold text-emerald-600">฿{(Number(s.total) - Number(s.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
                       </span>
                     )}
                   </div>
@@ -1554,11 +1555,7 @@ export default function SalesClient({
                         {s.channel === "other" ? (s.platform_name || SALE_CHANNEL_LABEL.other) : SALE_CHANNEL_LABEL[s.channel]}
                       </span>
                     )}
-                    {s.platform_fee_amount > 0 && (
-                      <span className="ml-1 text-[10px] text-gray-400">
-                        (ค่าธรรมเนียม ฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })})
-                      </span>
-                    )}
+
                   </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString("th-TH")}</td>
                   <td className="px-4 py-3">{s.customer_name ?? "-"}</td>
@@ -1585,6 +1582,13 @@ export default function SalesClient({
                   </td>
                   <td className={`px-4 py-3 text-right font-semibold ${isVoid ? "line-through" : ""}`}>
                     ฿{Number(s.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                    {isAdmin && !isVoid && s.platform_fee_amount > 0 && (
+                      <div className="mt-0.5 text-[11px] font-normal leading-tight text-gray-500">
+                        หักค่าธรรมเนียม <span className="text-red-500">-฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                        <br />
+                        เงินเข้า <span className="font-semibold text-emerald-600">฿{(Number(s.total) - Number(s.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">

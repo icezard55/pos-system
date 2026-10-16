@@ -799,7 +799,7 @@ export default function ReportsClient({
                 <th className="py-2 text-right">ค้างมาแล้ว</th>
                 <th className="py-2 text-right">ยอดขาย</th>
                 <th className="py-2 text-right">ค่าธรรมเนียม</th>
-                <th className="py-2 text-right">คาดว่าจะได้รับสุทธิ</th>
+                <th className="py-2 text-right text-emerald-700">💰 ยอดเงินเข้า (หลังหักค่าธรรมเนียม)</th>
                 <th className="py-2 text-right">กำไรหลังหักค่าธรรมเนียม</th>
               </tr>
             </thead>
@@ -817,7 +817,7 @@ export default function ReportsClient({
                     <td className="py-2 text-right text-gray-500">{daysOutstanding(r.created_at)} วัน</td>
                     <td className="py-2 text-right font-medium">฿{Number(r.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                     <td className="py-2 text-right text-red-500">-฿{Number(r.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
-                    <td className="py-2 text-right font-semibold text-amber-600">
+                    <td className="bg-emerald-50 py-2 pr-2 text-right text-base font-bold text-emerald-700">
                       ฿{(Number(r.total) - Number(r.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
                     </td>
                     <td className={`py-2 text-right font-semibold ${profitAfterFee >= 0 ? "text-green-600" : "text-red-600"}`}>

@@ -1118,9 +1118,8 @@ export default function PosClient({
                 />
               </div>
               {estimatedPlatformFee > 0 && (
-                <p className="text-xs text-gray-500">
-                  ค่าธรรมเนียมโดยประมาณ ฿{estimatedPlatformFee.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                  — ระบบจะบันทึกเป็นรายจ่ายให้อัตโนมัติเมื่อยืนยันการขาย
+                <p className="text-xs text-gray-400">
+                  ยอดบิลยังเป็นราคาจริง — ค่าธรรมเนียมจะถูกคำนวณและบันทึกเป็นรายจ่ายหลังบ้านให้อัตโนมัติ
                 </p>
               )}
             </div>

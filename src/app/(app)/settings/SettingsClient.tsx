@@ -3,13 +3,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { ShopSettings } from "@/lib/types";
+import DataResetPanel from "./DataResetPanel";
 import { STOREFRONT_THEMES, storefrontThemeStyle } from "@/lib/storefrontThemes";
 
 export default function SettingsClient({
+  userEmail,
   initialSettings,
   shopSlug,
   shopId,
 }: {
+  userEmail: string;
   initialSettings: ShopSettings | null;
   shopSlug: string | null;
   shopId: string;
@@ -393,6 +396,7 @@ export default function SettingsClient({
           )
         )}
       </div>
+      <DataResetPanel userEmail={userEmail} />
     </div>
   );
 }

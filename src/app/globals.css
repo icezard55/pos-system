@@ -24,8 +24,15 @@ body {
     visibility: hidden;
   }
 
-  #receipt, #receipt * {
+  #receipt, #receipt *,
+  .batch-root, .batch-root * {
     visibility: visible;
+  }
+
+  .batch-root {
+    position: absolute;
+    left: 0;
+    top: 0;
   }
 
   #receipt {

@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import { createClient } from "@/lib/supabase/client";
 import type { Product } from "@/lib/types";
 import { PRODUCT_CARD_COLORS } from "@/lib/types";
+import TiktokSkuImport from "./TiktokSkuImport";
 
 const HEADER_MAP: Record<string, string> = {
   sku: "sku", "รหัส": "sku", "รหัสสินค้า": "sku",
@@ -58,6 +59,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
   >([]);
   const [newBulkLabel, setNewBulkLabel] = useState("");
   const [autoBarcode, setAutoBarcode] = useState(false);
+  const [showTiktokImport, setShowTiktokImport] = useState(false);
 
   const categories = useMemo(() => {
     return Array.from(new Set(products.map((p) => (p.category ?? "").trim()).filter(Boolean))).sort((a, b) =>
@@ -486,6 +488,14 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
 
   return (
     <div>
+      {showTiktokImport && (
+        <TiktokSkuImport
+          products={products}
+          shopId={shopId}
+          onClose={() => setShowTiktokImport(false)}
+          onDone={() => window.location.reload()}
+        />
+      )}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">จัดการสต๊อกสินค้า</h1>
         <div className="flex flex-wrap gap-2">
@@ -499,6 +509,9 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
             📥 นำเข้าจาก Excel
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
           </label>
+          <button onClick={() => setShowTiktokImport(true)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
+            🔗 นำเข้า SKU + ราคา (TikTok)
+          </button>
           <button onClick={openCategoryManager} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
             🏷️ จัดการหมวดหมู่
           </button>

@@ -3,6 +3,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
+import TiktokIncomeImport from "./TiktokIncomeImport";
 import { createClient } from "@/lib/supabase/client";
 import type { Sale, SaleChannel, VoidType } from "@/lib/types";
 import { SALE_CHANNEL_LABEL, SALE_PAYMENT_STATUS_LABEL, VOID_TYPE_LABEL } from "@/lib/types";
@@ -202,6 +203,7 @@ export default function SalesClient({
   const [importingOrders, setImportingOrders] = useState(false);
   const [orderImportMsg, setOrderImportMsg] = useState<string | null>(null);
   const orderFileRef = useRef<HTMLInputElement>(null);
+  const [showIncomeImport, setShowIncomeImport] = useState(false);
 
   // ยืนยันจับคู่ SKU ID ใหม่ที่ระบบยังไม่รู้จัก ก่อนนำเข้าออเดอร์ที่เกี่ยวข้อง
   const [unresolvedSkuItems, setUnresolvedSkuItems] = useState<UnresolvedSkuItem[]>([]);
@@ -1045,6 +1047,14 @@ export default function SalesClient({
             "รอรับเงิน" ให้อัตโนมัติ (ยืนยันรับเงินได้ในตารางด้านล่างเมื่อแพลตฟอร์มโอนเงินมาแล้ว) — ถ้าไฟล์มีคอลัมน์
             "Tracking ID"/เลขพัสดุ ระบบจะบันทึกเลขพัสดุไว้กับบิลด้วย เพื่อให้ฟีเจอร์ถ่ายรูปแจ้งตีกลับด้านบนจับคู่บิลได้
           </p>
+          <div>
+            <button onClick={() => setShowIncomeImport(true)} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 hover:bg-emerald-100">
+              📊 อัปโหลดไฟล์รายได้ TikTok (ค่าธรรมเนียมจริง + เงินเข้าจริง)
+            </button>
+          </div>
+          {showIncomeImport && (
+            <TiktokIncomeImport sales={sales as any} onClose={() => setShowIncomeImport(false)} onDone={() => window.location.reload()} />
+          )}
           {orderImportMsg && <p className="text-xs text-blue-700">{orderImportMsg}</p>}
         </div>
       )}
@@ -1483,8 +1493,8 @@ export default function SalesClient({
                     )}
                     {isAdmin && !isVoid && s.platform_fee_amount > 0 && (
                       <span className="text-[11px] text-gray-500">
-                        หักค่าธรรมเนียม <span className="text-red-500">-฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>{" "}
-                        · เงินเข้า <span className="font-semibold text-emerald-600">฿{(Number(s.total) - Number(s.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                        {s.platform_net_actual != null ? "ค่าธรรมเนียมจริง" : "หักค่าธรรมเนียม"} <span className="text-red-500">-฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>{" "}
+                        · {s.platform_net_actual != null ? "เงินเข้าจริง ✓" : "เงินเข้า"} <span className="font-semibold text-emerald-600">฿{Number(s.platform_net_actual ?? Number(s.total) - Number(s.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
                       </span>
                     )}
                   </div>
@@ -1584,9 +1594,9 @@ export default function SalesClient({
                     ฿{Number(s.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
                     {isAdmin && !isVoid && s.platform_fee_amount > 0 && (
                       <div className="mt-0.5 text-[11px] font-normal leading-tight text-gray-500">
-                        หักค่าธรรมเนียม <span className="text-red-500">-฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                        {s.platform_net_actual != null ? "ค่าธรรมเนียมจริง" : "หักค่าธรรมเนียม"} <span className="text-red-500">-฿{Number(s.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
                         <br />
-                        เงินเข้า <span className="font-semibold text-emerald-600">฿{(Number(s.total) - Number(s.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                        {s.platform_net_actual != null ? "เงินเข้าจริง ✓" : "เงินเข้า"} <span className="font-semibold text-emerald-600">฿{Number(s.platform_net_actual ?? Number(s.total) - Number(s.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
                   </td>

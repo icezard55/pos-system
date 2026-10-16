@@ -129,6 +129,8 @@ export interface Sale {
   platform_name: string | null;
   platform_fee_pct: number | null;
   platform_fee_amount: number;
+  platform_net_actual?: number | null;
+  platform_fee_actual?: number | null;
   payment_status: "unpaid" | "paid";
   received_at: string | null;
   note: string | null;

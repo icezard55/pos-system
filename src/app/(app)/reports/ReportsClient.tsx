@@ -67,6 +67,11 @@ interface AccountsReceivableRow {
   platform_fee_amount: number;
   customer_name: string | null;
   cost_total: number;
+  platform_net_actual?: number | null;
+}
+
+function netOf(r: AccountsReceivableRow): number {
+  return r.platform_net_actual != null ? Number(r.platform_net_actual) : Number(r.total) - Number(r.platform_fee_amount);
 }
 
 function oneName(v: { name: string; unit?: string } | { name: string; unit?: string }[] | null): string {
@@ -390,8 +395,9 @@ export default function ReportsClient({
         ยอดขาย: Number(Number(r.total).toFixed(2)),
         ต้นทุนสินค้า: Number(Number(r.cost_total).toFixed(2)),
         ค่าธรรมเนียมแพลตฟอร์ม: Number(Number(r.platform_fee_amount).toFixed(2)),
-        คาดว่าจะได้รับสุทธิ: Number((Number(r.total) - Number(r.platform_fee_amount)).toFixed(2)),
-        กำไรหลังหักค่าธรรมเนียม: Number((Number(r.total) - Number(r.cost_total) - Number(r.platform_fee_amount)).toFixed(2)),
+        ยอดเงินเข้า: Number(netOf(r).toFixed(2)),
+        สถานะยอดเงินเข้า: r.platform_net_actual != null ? "จริงจากไฟล์ TikTok" : "ประมาณการ",
+        กำไรหลังหักค่าธรรมเนียม: Number((netOf(r) - Number(r.cost_total)).toFixed(2)),
         ค้างมาแล้ว_วัน: daysOutstanding(r.created_at),
       }))
     );
@@ -805,7 +811,7 @@ export default function ReportsClient({
             </thead>
             <tbody>
               {accountsReceivable.map((r) => {
-                const profitAfterFee = Number(r.total) - Number(r.cost_total) - Number(r.platform_fee_amount);
+                const profitAfterFee = netOf(r) - Number(r.cost_total);
                 return (
                   <tr key={r.id} className="border-b last:border-0">
                     <td className="py-2">{r.sale_no}</td>
@@ -818,7 +824,8 @@ export default function ReportsClient({
                     <td className="py-2 text-right font-medium">฿{Number(r.total).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                     <td className="py-2 text-right text-red-500">-฿{Number(r.platform_fee_amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                     <td className="bg-emerald-50 py-2 pr-2 text-right text-base font-bold text-emerald-700">
-                      ฿{(Number(r.total) - Number(r.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                      ฿{netOf(r).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                      <span className="block text-[10px] font-normal text-gray-500">{r.platform_net_actual != null ? "จริงจาก TikTok ✓" : "ประมาณการ"}</span>
                     </td>
                     <td className={`py-2 text-right font-semibold ${profitAfterFee >= 0 ? "text-green-600" : "text-red-600"}`}>
                       ฿{profitAfterFee.toLocaleString("th-TH", { minimumFractionDigits: 2 })}

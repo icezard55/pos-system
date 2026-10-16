@@ -16,10 +16,13 @@ export default function BatchClient({
   shopSettings: ShopSettings | null;
 }) {
   const [paper, setPaper] = useState<"thermal" | "a5">("thermal");
+  const w = paper === "a5" ? "128mm" : "80mm";
   const css =
-    paper === "a5"
-      ? "@media print { @page { size: A5 portrait; margin: 10mm; } html, body { width: auto !important; } .receipt-card { box-shadow: none !important; } }"
-      : "@media print { @page { size: 80mm auto; margin: 0; } html, body { width: 80mm !important; } .receipt-card { box-shadow: none !important; } }";
+    "@media print { .batch-root, .batch-root * { visibility: visible !important; } .batch-root { position: absolute; left: 0; top: 0; width: " + w + "; } " +
+    ".batch-root .receipt-card { position: static !important; width: " + w + " !important; max-width: " + w + " !important; margin: 0 !important; box-shadow: none !important; border-radius: 0 !important; padding: " + (paper === "a5" ? "0" : "4mm") + " !important; font-size: " + (paper === "a5" ? "14px" : "11px") + " !important; } " +
+    (paper === "a5"
+      ? "@page { size: A5 portrait; margin: 10mm; } html, body { width: auto !important; } }"
+      : "@page { size: 80mm auto; margin: 0; } html, body { width: 80mm !important; } }");
 
   return (
     <div className="min-h-screen bg-gray-100 py-6">
@@ -35,7 +38,7 @@ export default function BatchClient({
           <Link href="/sales" className="rounded-lg border px-3 py-1.5 text-sm">← กลับ</Link>
         </div>
       </div>
-      <div className="space-y-4 print:space-y-0">
+      <div className="batch-root space-y-4 print:space-y-0">
         {sales.map((s) => (
           <ReceiptClient
             key={s.id}

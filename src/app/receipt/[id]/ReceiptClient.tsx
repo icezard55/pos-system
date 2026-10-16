@@ -20,6 +20,8 @@ export default function ReceiptClient({
   customerMode = false,
   backHref,
   autoDownload = false,
+  embedded = false,
+  forcedPaper,
 }: {
   sale: Sale;
   items: SaleItem[];
@@ -28,11 +30,14 @@ export default function ReceiptClient({
   customerMode?: boolean; // ลูกค้าเปิดจากหน้าค้นหาบิล: ดาวน์โหลดได้อย่างเดียว
   backHref?: string;
   autoDownload?: boolean;
+  embedded?: boolean; // ใช้ในหน้าพิมพ์หลายใบ: แสดงเฉพาะตัวใบเสร็จ ไม่มีปุ่ม
+  forcedPaper?: "thermal" | "a5";
 }) {
   const dt = new Date(sale.created_at);
   const { base, vat } = splitVat(Number(sale.total));
   const isTaxInvoice = !!(sale.customer_tax_id || sale.customer_address);
-  const [paperSize, setPaperSize] = useState<"thermal" | "a5">("thermal");
+  const [paperSizeState, setPaperSize] = useState<"thermal" | "a5">("thermal");
+  const paperSize = forcedPaper ?? paperSizeState;
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   async function handleDownloadPdf() {
@@ -91,7 +96,7 @@ export default function ReceiptClient({
         @media print {
           @page { size: A5 portrait; margin: 10mm; }
           html, body { width: auto !important; }
-          #receipt {
+          .receipt-card {
             width: 128mm !important;
             max-width: 128mm !important;
             padding: 0 !important;
@@ -103,7 +108,7 @@ export default function ReceiptClient({
         @media print {
           @page { size: 80mm auto; margin: 0; }
           html, body { width: 80mm !important; }
-          #receipt {
+          .receipt-card {
             width: 80mm !important;
             max-width: 80mm !important;
             padding: 4mm !important;
@@ -112,12 +117,11 @@ export default function ReceiptClient({
         }
       `;
 
-  return (
-    <div className="min-h-screen bg-gray-100 py-8">
-      <style dangerouslySetInnerHTML={{ __html: printCss }} />
+  const card = (
       <div
-        className={`mx-auto rounded-xl bg-white p-6 shadow-lg ${paperSize === "a5" ? "max-w-xl" : "max-w-sm"}`}
-        id="receipt"
+        className={`receipt-card mx-auto rounded-xl bg-white p-6 shadow-lg ${paperSize === "a5" ? "max-w-xl" : "max-w-sm"}`}
+        id={embedded ? undefined : "receipt"}
+        style={embedded ? { breakAfter: "page", pageBreakAfter: "always" } : undefined}
       >
         <div className="mb-4 text-center">
           {shopSettings && (
@@ -215,7 +219,7 @@ export default function ReceiptClient({
           </div>
         )}
 
-        {customerMode ? (
+        {embedded ? null : customerMode ? (
           <div className="no-print mt-6 space-y-2">
             <button
               type="button"
@@ -269,6 +273,13 @@ export default function ReceiptClient({
           </div>
         )}
       </div>
+  );
+
+  if (embedded) return card;
+  return (
+    <div className="min-h-screen bg-gray-100 py-8">
+      <style dangerouslySetInnerHTML={{ __html: printCss }} />
+      {card}
     </div>
   );
 }

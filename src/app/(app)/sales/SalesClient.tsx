@@ -225,6 +225,13 @@ export default function SalesClient({
   const orderFileRef = useRef<HTMLInputElement>(null);
   const [showIncomeImport, setShowIncomeImport] = useState(false);
   const [showShopeeIncome, setShowShopeeIncome] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
 
   // ยืนยันจับคู่ SKU ID ใหม่ที่ระบบยังไม่รู้จัก ก่อนนำเข้าออเดอร์ที่เกี่ยวข้อง
   const [unresolvedSkuItems, setUnresolvedSkuItems] = useState<UnresolvedSkuItem[]>([]);
@@ -1495,6 +1502,21 @@ export default function SalesClient({
         </select>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="sticky top-2 z-30 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-brand bg-white p-3 shadow-lg">
+          <span className="text-sm">เลือกแล้ว <b>{selectedIds.size}</b> บิล</span>
+          <div className="flex gap-2 text-sm">
+            <button onClick={() => setSelectedIds(new Set(filtered.map((x) => x.id)))} className="rounded-lg border px-3 py-1.5">เลือกทั้งหมดที่แสดง ({filtered.length})</button>
+            <button onClick={() => setSelectedIds(new Set())} className="rounded-lg border px-3 py-1.5">ล้าง</button>
+            <button
+              onClick={() => router.push(`/receipt/batch?ids=${Array.from(selectedIds).join(",")}`)}
+              className="rounded-lg bg-brand px-4 py-1.5 font-semibold text-white"
+            >
+              🖨️ พิมพ์ใบเสร็จที่เลือก
+            </button>
+          </div>
+        </div>
+      )}
       {/* รายการแบบการ์ด - จอมือถือ */}
       <div className="space-y-3 md:hidden">
         {(() => {
@@ -1509,7 +1531,10 @@ export default function SalesClient({
                 {showGroupHeader && (
                   <p className="pt-1 text-xs font-semibold text-gray-500">{group}</p>
                 )}
-                <div className={`rounded-2xl bg-white p-4 shadow-sm ${isVoid ? "opacity-50" : ""}`}>
+                <div className={`relative rounded-2xl bg-white p-4 shadow-sm ${isVoid ? "opacity-50" : ""} ${selectedIds.has(s.id) ? "ring-2 ring-brand" : ""}`}>
+                  <label className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center">
+                    <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} className="h-5 w-5" aria-label="เลือกบิลนี้" />
+                  </label>
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <p className="font-medium">{s.sale_no}</p>
                     <p className={`font-semibold ${isVoid ? "line-through" : ""}`}>
@@ -1580,6 +1605,14 @@ export default function SalesClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-gray-50 text-left text-gray-500">
+              <th className="w-10 px-3 py-3">
+                <input
+                  type="checkbox"
+                  aria-label="เลือกทั้งหมดที่แสดง"
+                  checked={filtered.length > 0 && filtered.every((x) => selectedIds.has(x.id))}
+                  onChange={(e) => setSelectedIds(e.target.checked ? new Set(filtered.map((x) => x.id)) : new Set())}
+                />
+              </th>
               <th className="px-4 py-3">เลขที่บิล</th>
               <th className="px-4 py-3">วันที่</th>
               <th className="px-4 py-3">ลูกค้า</th>
@@ -1601,12 +1634,15 @@ export default function SalesClient({
                   <Fragment key={s.id}>
                     {showGroupHeader && (
                       <tr key={`group-${s.id}`} className="bg-gray-100">
-                        <td colSpan={7} className="px-4 py-2 text-xs font-semibold text-gray-500">
+                        <td colSpan={8} className="px-4 py-2 text-xs font-semibold text-gray-500">
                           {group}
                         </td>
                       </tr>
                     )}
                     <tr key={s.id} className={`border-b last:border-0 hover:bg-gray-50 ${isVoid ? "opacity-50" : ""}`}>
+                  <td className="px-3 py-3">
+                    <input type="checkbox" checked={selectedIds.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label="เลือกบิลนี้" />
+                  </td>
                   <td className="px-4 py-3 font-medium">
                     {s.sale_no}
                     {s.source === "imported" && (
@@ -1687,7 +1723,7 @@ export default function SalesClient({
               });
             })()}
             {filtered.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">ไม่มีรายการขาย</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">ไม่มีรายการขาย</td></tr>
             )}
           </tbody>
         </table>

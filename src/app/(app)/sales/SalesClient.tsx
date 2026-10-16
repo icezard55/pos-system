@@ -43,6 +43,12 @@ const ORDER_HEADER_MAP: Record<string, string> = {
   "sku unit original price": "unit_price", "ราคาต่อหน่วย (บาท)": "unit_price",
   "sku subtotal after discount": "subtotal_after_discount", "ราคารวมรายการ (บาท)": "subtotal_after_discount",
   "sku id": "platform_sku_id",
+  // Shopee
+  "หมายเลขคำสั่งซื้อ": "order_no", "ชื่อตัวเลือก": "variation", "ราคาขาย": "unit_price",
+  "ราคาขายสุทธิ": "subtotal_after_discount",
+  "เลขอ้างอิง sku (sku reference no.)": "sku",
+  "ค่าคอมมิชชั่น": "fee_commission", "transaction fee": "fee_txn", "ค่าบริการ": "fee_service",
+  "สถานะการสั่งซื้อ": "order_status",
   "tracking id": "tracking_number", "tracking number": "tracking_number", "เลขพัสดุ": "tracking_number", "เลขพัสดุขนส่ง": "tracking_number",
   "*หมายเลขติดตามพัสดุ": "tracking_number", "หมายเลขติดตามพัสดุ": "tracking_number", "tracking no.": "tracking_number",
 };
@@ -51,6 +57,18 @@ const ORDER_HEADER_MAP: Record<string, string> = {
 // จับคู่สินค้าด้วยรหัส SKU ตรงกับที่ตั้งไว้ในหน้าจัดการสต๊อกสินค้าได้เลย ไม่ต้องยืนยันจับคู่ SKU ID ก่อน
 function channelUsesDirectSku(channel: SaleChannel): boolean {
   return channel === "thaimart";
+}
+
+// บางไฟล์ (เช่นจาก TikTok/WPS) ระบุช่วงข้อมูลผิด ทำให้อ่านได้ไม่ครบ — คำนวณช่วงจริงจากเซลล์
+function fixSheetRef(ws: XLSX.WorkSheet) {
+  let maxR = 0, maxC = 0;
+  for (const key of Object.keys(ws)) {
+    if (key[0] === "!") continue;
+    const c = XLSX.utils.decode_cell(key);
+    if (c.r > maxR) maxR = c.r;
+    if (c.c > maxC) maxC = c.c;
+  }
+  if (maxR > 0) ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } });
 }
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
@@ -88,6 +106,7 @@ interface PlatformOrderItem {
 interface PlatformOrderGroup {
   order_no: string;
   tracking_number: string;
+  fee_amount?: number;
   items: PlatformOrderItem[];
 }
 interface CatalogProduct {
@@ -787,6 +806,9 @@ export default function SalesClient({
         });
         if (rpcError) throw rpcError;
         const newSaleId = saleRows?.[0]?.sale_id as string | undefined;
+        if (newSaleId && g.fee_amount && g.fee_amount > 0) {
+          await supabase.rpc("set_sale_platform_fee", { p_sale_id: newSaleId, p_fee: g.fee_amount });
+        }
         if (newSaleId && g.tracking_number) {
           await supabase.rpc("set_sale_tracking_number", { p_sale_id: newSaleId, p_tracking_number: g.tracking_number });
         }
@@ -833,8 +855,10 @@ export default function SalesClient({
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
+      fixSheetRef(ws);
       const raw: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false });
 
+      let cancelledSkipped = 0;
       const rows = raw
         .map((row) => {
           const mapped: Record<string, any> = {};
@@ -844,7 +868,15 @@ export default function SalesClient({
           }
           return mapped;
         })
-        .filter((r) => (r.qty && Number(r.qty) > 0) && (String(r.sku ?? "").trim() || String(r.product_name ?? "").trim()));
+        .filter((r) => (r.qty && Number(r.qty) > 0) && (String(r.sku ?? "").trim() || String(r.product_name ?? "").trim()))
+        .filter((r) => {
+          // ข้ามออเดอร์ที่ยกเลิกแล้ว (ไฟล์ Shopee มีคอลัมน์สถานะการสั่งซื้อ)
+          if (String(r.order_status ?? "").includes("ยกเลิก")) {
+            cancelledSkipped++;
+            return false;
+          }
+          return true;
+        });
 
       if (rows.length === 0) {
         setOrderImportMsg("ไม่พบข้อมูลที่ใช้ได้ในไฟล์ กรุณาตรวจสอบหัวคอลัมน์ เช่น เลขออเดอร์, สินค้า, จำนวน, ราคาต่อหน่วย, SKU ID");
@@ -859,6 +891,18 @@ export default function SalesClient({
         const group = groups.get(orderNo)!;
         const rowTracking = String(r.tracking_number ?? "").trim();
         if (rowTracking && !group.tracking_number) group.tracking_number = rowTracking;
+        // ค่าธรรมเนียมจริงจากไฟล์ (Shopee: ค่าคอมมิชชั่น + Transaction Fee + ค่าบริการ) เป็นค่าระดับออเดอร์ — ใช้ค่าจากแถวแรกของออเดอร์
+        if (group.fee_amount === undefined) {
+          const f = ["fee_commission", "fee_txn", "fee_service"].reduce((t, k) => t + (Number(String(r[k] ?? "").replace(/,/g, "")) || 0), 0);
+          if (f > 0) group.fee_amount = Math.round(f * 100) / 100;
+        }
+        // ไฟล์ที่ไม่มี SKU ID (เช่น Shopee ที่ร้านไม่ได้ตั้งรหัส SKU) → ใช้ "ชื่อสินค้า|ชื่อตัวเลือก" เป็นรหัสจับคู่แทน
+        // ยืนยันจับคู่ครั้งแรกครั้งเดียว ระบบจะจำไว้ใช้อัตโนมัติ
+        let platformKey = String(r.platform_sku_id ?? "").trim();
+        if (!platformKey && !channelUsesDirectSku(orderChannel)) {
+          const sref = String(r.sku ?? "").trim();
+          platformKey = sref ? `sku:${sref}` : `name:${String(r.product_name ?? "").trim()}|${String(r.variation ?? "").trim()}`.slice(0, 300);
+        }
         group.items.push({
           sku: String(r.sku ?? "").trim(),
           product_name: String(r.product_name ?? "").trim(),
@@ -866,7 +910,7 @@ export default function SalesClient({
           qty: Number(r.qty) || 0,
           unit_price: Number(r.unit_price) || 0,
           subtotal_after_discount: Number(r.subtotal_after_discount) || 0,
-          platform_sku_id: String(r.platform_sku_id ?? "").trim(),
+          platform_sku_id: platformKey,
         });
       });
 

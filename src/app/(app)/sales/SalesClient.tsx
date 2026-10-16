@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as XLSX from "xlsx";
 import TiktokIncomeImport from "./TiktokIncomeImport";
+import ShopeeIncomeImport from "./ShopeeIncomeImport";
 import { createClient } from "@/lib/supabase/client";
 import type { Sale, SaleChannel, VoidType } from "@/lib/types";
 import { SALE_CHANNEL_LABEL, SALE_PAYMENT_STATUS_LABEL, VOID_TYPE_LABEL } from "@/lib/types";
@@ -223,6 +224,7 @@ export default function SalesClient({
   const [orderImportMsg, setOrderImportMsg] = useState<string | null>(null);
   const orderFileRef = useRef<HTMLInputElement>(null);
   const [showIncomeImport, setShowIncomeImport] = useState(false);
+  const [showShopeeIncome, setShowShopeeIncome] = useState(false);
 
   // ยืนยันจับคู่ SKU ID ใหม่ที่ระบบยังไม่รู้จัก ก่อนนำเข้าออเดอร์ที่เกี่ยวข้อง
   const [unresolvedSkuItems, setUnresolvedSkuItems] = useState<UnresolvedSkuItem[]>([]);
@@ -1095,9 +1097,15 @@ export default function SalesClient({
             <button onClick={() => setShowIncomeImport(true)} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 hover:bg-emerald-100">
               📊 อัปโหลดไฟล์รายได้ TikTok (ค่าธรรมเนียมจริง + เงินเข้าจริง)
             </button>
+            <button onClick={() => setShowShopeeIncome(true)} className="ml-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-1.5 text-sm text-orange-800 hover:bg-orange-100">
+              📊 อัปโหลดไฟล์รายได้ Shopee (ค่าธรรมเนียมจริง + เงินเข้าจริง)
+            </button>
           </div>
           {showIncomeImport && (
             <TiktokIncomeImport sales={sales as any} onClose={() => setShowIncomeImport(false)} onDone={() => window.location.reload()} />
+          )}
+          {showShopeeIncome && (
+            <ShopeeIncomeImport sales={sales as any} onClose={() => setShowShopeeIncome(false)} onDone={() => window.location.reload()} />
           )}
           {orderImportMsg && <p className="text-xs text-blue-700">{orderImportMsg}</p>}
         </div>

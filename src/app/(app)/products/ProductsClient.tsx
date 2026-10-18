@@ -427,9 +427,24 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
     if (!confirm(`ลบสินค้า "${p.name}" ใช่หรือไม่?`)) return;
     const { error } = await supabase.from("products").delete().eq("id", p.id);
     if (error) {
+      // สินค้าที่เคยขาย/สั่งซื้อแล้วลบจริงไม่ได้ (ต้องเก็บประวัติบิล) → เสนอปิดการใช้งานแทน
+      if ((error as any).code === "23503" || /foreign key/i.test(error.message)) {
+        if (confirm(`"${p.name}" เคยมีการขาย/สั่งซื้อแล้ว จึงลบถาวรไม่ได้ (ต้องเก็บประวัติบิลไว้)\n\nต้องการ "ปิดการใช้งาน" แทนหรือไม่? สินค้าจะไม่แสดงใน POS/หน้าร้านออนไลน์ แต่ประวัติการขายยังอยู่ครบ และเปิดกลับมาได้ภายหลัง`)) {
+          const { error: e2 } = await supabase.from("products").update({ is_active: false }).eq("id", p.id);
+          if (e2) { alert(e2.message); return; }
+          await refresh();
+        }
+        return;
+      }
       alert(error.message);
       return;
     }
+    await refresh();
+  }
+
+  async function handleReactivate(p: Product) {
+    const { error } = await supabase.from("products").update({ is_active: true }).eq("id", p.id);
+    if (error) { alert(error.message); return; }
     await refresh();
   }
 
@@ -600,6 +615,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                 <td className="px-4 py-3 text-gray-500">{p.sku ?? "-"}</td>
                 <td className="px-4 py-3 font-medium">
                   {p.name}
+                  {p.is_active === false && <span className="ml-2 rounded-full bg-gray-200 px-2 py-0.5 text-[10px] font-normal text-gray-600">ปิดใช้งาน</span>}
                   {p.variant_group && (
                     <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-normal text-indigo-600">
                       {p.variant_group}
@@ -654,6 +670,9 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                 </td>
                 <td className="px-4 py-3 text-right">
                   <button onClick={() => openEdit(p)} className="mr-3 text-brand hover:underline">แก้ไข</button>
+                  {p.is_active === false && (
+                    <button onClick={() => handleReactivate(p)} className="mr-3 text-emerald-600 hover:underline">เปิดใช้งาน</button>
+                  )}
                   <button onClick={() => handleDelete(p)} className="text-red-600 hover:underline">ลบ</button>
                 </td>
               </tr>

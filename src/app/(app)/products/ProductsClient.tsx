@@ -17,12 +17,21 @@ const HEADER_MAP: Record<string, string> = {
   low_stock_threshold: "low_stock_threshold", "จุดสั่งซื้อ": "low_stock_threshold", "แจ้งเตือนขั้นต่ำ": "low_stock_threshold",
 };
 
+// ราคาแยกตามช่องทาง: เก็บเฉพาะช่องที่กรอก (ไม่กรอก = ใช้ราคาขายปกติ)
+function channelPricesOf(f: { price_shopee: string; price_tiktok: string; price_lazada: string; price_online: string }) {
+  const out: Record<string, number> = {};
+  const put = (k: string, v: string) => { if (v.trim() !== "" && Number.isFinite(Number(v))) out[k] = Number(v); };
+  put("shopee", f.price_shopee); put("tiktok", f.price_tiktok); put("lazada", f.price_lazada); put("online", f.price_online);
+  return out;
+}
+
 function emptyForm() {
   return {
     id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0",
     low_stock_threshold: "5", image_url: "", variant_group: "", variant_label: "",
     storage_location: "", no_stock_tracking: false, card_color: "", receipt_name: "", sort_order: "0",
     expiry_date: "", wholesale_price: "", member_price: "",
+    price_shopee: "", price_tiktok: "", price_lazada: "", price_online: "",
   };
 }
 
@@ -134,6 +143,10 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
       card_color: p.card_color ?? "", receipt_name: p.receipt_name ?? "", sort_order: String(p.sort_order ?? 0),
       expiry_date: p.expiry_date ?? "", wholesale_price: p.wholesale_price != null ? String(p.wholesale_price) : "",
       member_price: p.member_price != null ? String(p.member_price) : "",
+      price_shopee: p.channel_prices?.shopee != null ? String(p.channel_prices.shopee) : "",
+      price_tiktok: p.channel_prices?.tiktok != null ? String(p.channel_prices.tiktok) : "",
+      price_lazada: p.channel_prices?.lazada != null ? String(p.channel_prices.lazada) : "",
+      price_online: p.channel_prices?.online != null ? String(p.channel_prices.online) : "",
     });
     setAddingCategory(false);
     setNewCategory("");
@@ -317,6 +330,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
           expiry_date: form.expiry_date || null,
           wholesale_price: form.wholesale_price.trim() ? Number(form.wholesale_price) : null,
           member_price: form.member_price.trim() ? Number(form.member_price) : null,
+          channel_prices: channelPricesOf(form),
           is_active: v.active,
         }));
         const { data: insertedRows, error } = await supabase.from("products").insert(rows).select("id");
@@ -375,6 +389,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
       expiry_date: form.expiry_date || null,
       wholesale_price: form.wholesale_price.trim() ? Number(form.wholesale_price) : null,
           member_price: form.member_price.trim() ? Number(form.member_price) : null,
+      channel_prices: channelPricesOf(form),
     };
     try {
       let productId = form.id;
@@ -608,6 +623,13 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                     <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-normal text-emerald-700">
                       สมาชิก {Number(p.member_price).toLocaleString("th-TH")}
                     </span>
+                  )}
+                  {([["shopee", "Shopee"], ["tiktok", "TikTok"], ["lazada", "Lazada"], ["online", "ออนไลน์"]] as const).map(([k, label]) =>
+                    p.channel_prices?.[k] != null ? (
+                      <span key={k} className="ml-2 inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-normal text-orange-700">
+                        {label} {Number(p.channel_prices[k]).toLocaleString("th-TH")}
+                      </span>
+                    ) : null
                   )}
                 </td>
                 <td className="px-4 py-3 text-gray-500">{p.category ?? "-"}</td>
@@ -953,6 +975,30 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                   onChange={(e) => setForm({ ...form, member_price: e.target.value })}
                 />
                 <p className="mt-1 text-[11px] text-gray-400">ใช้เมื่อขายหน้าร้านแบบเลือกลูกค้า/สมาชิก และในร้านออนไลน์เมื่อเบอร์ตรงกับสมาชิก</p>
+              </div>
+              <div className="col-span-2 rounded-lg border border-orange-200 bg-orange-50/40 p-3">
+                <p className="mb-2 text-xs font-semibold text-orange-800">ราคาแยกตามช่องทาง (ไม่บังคับ — SKU เดียวกัน คนละราคา)</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    ["price_shopee", "Shopee"],
+                    ["price_tiktok", "TikTok"],
+                    ["price_lazada", "Lazada"],
+                    ["price_online", "หน้าร้านออนไลน์ (/shop)"],
+                  ] as const).map(([k, label]) => (
+                    <div key={k}>
+                      <label className="mb-1 block text-[11px] text-gray-600">{label}</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="ใช้ราคาขายปกติ"
+                        className="w-full rounded-lg border px-3 py-2 text-sm"
+                        value={form[k]}
+                        onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-[11px] text-gray-400">ถ้าไม่กรอกช่องไหน ช่องนั้นใช้ราคาขายปกติ · ใช้อัตโนมัติเมื่อเลือกช่องทางใน POS / นำเข้าออเดอร์ / ร้านออนไลน์ (ลูกค้าส่งยังใช้ราคาส่งก่อน)</p>
               </div>
               <div className="col-span-2">
                 <label className="mb-1 block text-xs font-medium text-gray-600">ชื่อแยกสำหรับใบเสร็จ (ไม่บังคับ)</label>

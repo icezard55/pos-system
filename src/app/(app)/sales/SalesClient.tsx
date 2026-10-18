@@ -116,6 +116,7 @@ interface CatalogProduct {
   name: string;
   sell_price: number;
   stock_qty: number;
+  channel_prices?: Record<string, number | string> | null;
 }
 interface UnresolvedSkuItem {
   platform_sku_id: string;
@@ -782,7 +783,9 @@ export default function SalesClient({
                 : `แถวสินค้า "${it.product_name || it.sku}" ไม่มี SKU ID ในไฟล์ จับคู่ไม่ได้`
             );
           }
-          const catalogPrice = Number(product.sell_price);
+          // ใช้ราคาของช่องทางนั้นถ้าตั้งไว้ (ต้องตรงกับ create_sale ฝั่งฐานข้อมูล)
+          const chPrice = (channel === "shopee" || channel === "tiktok" || channel === "lazada") ? product.channel_prices?.[channel] : null;
+          const catalogPrice = chPrice != null && chPrice !== "" ? Number(chPrice) : Number(product.sell_price);
           // Prefer the actual amount the platform paid out for this line (after seller/platform
           // discounts) when the file provides it — that's what should reconcile against our
           // catalog price, not the pre-discount unit price.
@@ -850,7 +853,7 @@ export default function SalesClient({
     try {
       const { data: productRows, error: prodErr } = await supabase
         .from("products")
-        .select("id, sku, name, sell_price, stock_qty")
+        .select("id, sku, name, sell_price, stock_qty, channel_prices")
         .eq("is_active", true);
       if (prodErr) throw prodErr;
       const productList: CatalogProduct[] = productRows ?? [];

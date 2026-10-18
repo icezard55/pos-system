@@ -29,6 +29,7 @@ export interface Product {
   expiry_date: string | null;
   wholesale_price: number | null;
   member_price?: number | null;
+  channel_prices?: Record<string, number | string> | null;
 }
 
 export interface Promotion {

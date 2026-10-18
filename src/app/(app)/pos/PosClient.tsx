@@ -143,6 +143,9 @@ export default function PosClient({
   const isMember = !!selectedCustomer && !isWholesale;
   function effectivePrice(p: Product) {
     if (isWholesale && p.wholesale_price != null) return Number(p.wholesale_price);
+    // ราคาแยกตามช่องทางแพลตฟอร์ม (ต้องตรงกับ create_sale)
+    const cp = p.channel_prices?.[channel];
+    if ((channel === "shopee" || channel === "tiktok" || channel === "lazada") && cp != null && cp !== "") return Number(cp);
     if (selectedCustomer && p.member_price != null) return Number(p.member_price);
     return Number(p.sell_price);
   }

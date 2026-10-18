@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { ShopSettings } from "@/lib/types";
 import DataResetPanel from "./DataResetPanel";
+import DashboardSharePanel from "./DashboardSharePanel";
 import { STOREFRONT_THEMES, storefrontThemeStyle } from "@/lib/storefrontThemes";
 
 export default function SettingsClient({
@@ -396,6 +397,7 @@ export default function SettingsClient({
           )
         )}
       </div>
+      <DashboardSharePanel />
       <DataResetPanel userEmail={userEmail} />
     </div>
   );

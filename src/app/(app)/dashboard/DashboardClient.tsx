@@ -72,7 +72,13 @@ function Toggle<T extends string>({ value, options, onChange }: { value: T; opti
   );
 }
 
-export default function DashboardClient({ data, shopName }: { data: DashboardData; shopName: string }) {
+// โหมดอ่านอย่างเดียว (หน้าแชร์ให้คนนอก): ลิงก์ทั้งหมดกลายเป็นข้อความธรรมดา
+function A({ ro, href, className, children }: { ro?: boolean; href: string; className?: string; children: React.ReactNode }) {
+  if (ro) return <div className={className}>{children}</div>;
+  return <Link href={href} className={className}>{children}</Link>;
+}
+
+export default function DashboardClient({ data, shopName, readOnly = false }: { data: DashboardData; shopName: string; readOnly?: boolean }) {
   const [catRange, setCatRange] = useState<"month" | "year">("month");
   const [trend, setTrend] = useState<"daily" | "monthly">("monthly");
   const k = data.kpi;
@@ -136,12 +142,12 @@ export default function DashboardClient({ data, shopName }: { data: DashboardDat
           <h1 suppressHydrationWarning className="text-2xl font-bold text-gray-800">{greet} 👋</h1>
           <p className="text-sm text-gray-500">ภาพรวม {shopName} แบบเรียลไทม์</p>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <Link href="/pos" className="rounded-lg bg-brand px-3 py-2 font-semibold text-white hover:bg-brand-dark">🛒 ขายสินค้า</Link>
-          <Link href="/purchase-orders" className="rounded-lg border bg-white px-3 py-2 text-gray-700 hover:bg-gray-50">📥 สั่งซื้อ</Link>
-          <Link href="/stock-counts" className="rounded-lg border bg-white px-3 py-2 text-gray-700 hover:bg-gray-50">📋 ตรวจนับ</Link>
-          <Link href="/reports" className="rounded-lg border bg-white px-3 py-2 text-gray-700 hover:bg-gray-50">📈 รายงาน</Link>
-        </div>
+        {!readOnly && <div className="flex flex-wrap gap-2 text-sm">
+          <A ro={readOnly} href="/pos" className="rounded-lg bg-brand px-3 py-2 font-semibold text-white hover:bg-brand-dark">🛒 ขายสินค้า</A>
+          <A ro={readOnly} href="/purchase-orders" className="rounded-lg border bg-white px-3 py-2 text-gray-700 hover:bg-gray-50">📥 สั่งซื้อ</A>
+          <A ro={readOnly} href="/stock-counts" className="rounded-lg border bg-white px-3 py-2 text-gray-700 hover:bg-gray-50">📋 ตรวจนับ</A>
+          <A ro={readOnly} href="/reports" className="rounded-lg border bg-white px-3 py-2 text-gray-700 hover:bg-gray-50">📈 รายงาน</A>
+        </div>}
       </div>
 
       {/* KPI */}
@@ -160,11 +166,11 @@ export default function DashboardClient({ data, shopName }: { data: DashboardDat
       <Card title="📌 งานที่ต้องจัดการ">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
           {todos.map((d) => (
-            <Link key={d.label} href={d.href}
+            <A ro={readOnly} key={d.label} href={d.href}
               className={`rounded-xl border p-3 transition hover:shadow-sm ${d.n > 0 ? "border-gray-200" : "border-gray-100 opacity-60"}`}>
               <p className={`inline-block rounded-md px-2 text-xl font-bold ${d.n > 0 ? toneCls[d.tone] : "bg-gray-50 text-gray-400"}`}>{Number(d.n || 0).toLocaleString()}</p>
               <p className="mt-1 text-[11px] leading-tight text-gray-600">{d.label}</p>
-            </Link>
+            </A>
           ))}
         </div>
       </Card>
@@ -252,7 +258,7 @@ export default function DashboardClient({ data, shopName }: { data: DashboardDat
           />
           <p className="mt-2 text-center text-xs text-gray-500">
             รวมค้างรับ <span className="font-semibold text-gray-700">{fmtBaht(data.receivable.platform_unpaid)}</span> จาก {data.receivable.platform_bills} บิล
-            {" · "}<Link href="/reports" className="text-brand hover:underline">ดูรายละเอียด</Link>
+            {" · "}<A ro={readOnly} href="/reports" className="text-brand hover:underline">ดูรายละเอียด</A>
           </p>
         </Card>
       </div>

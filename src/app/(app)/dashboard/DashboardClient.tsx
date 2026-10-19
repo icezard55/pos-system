@@ -9,9 +9,12 @@ export interface DashboardData {
     today_total: number; today_bills: number; yesterday_total: number;
     month_total: number; month_bills: number; month_profit: number;
     prev_total: number; prev_bills: number; prev_profit: number;
+    today_profit?: number; today_gross?: number; today_fee?: number;
+    yesterday_profit?: number; yesterday_gross?: number;
+    month_gross?: number; month_fee?: number;
   };
   monthly: { m: string; revenue: number; gross: number; expenses: number }[];
-  daily: { d: string; revenue: number; bills: number }[];
+  daily: { d: string; revenue: number; bills: number; profit?: number; gross?: number }[];
   by_hour: { h: number; revenue: number; bills: number }[];
   by_channel: { channel: string; revenue: number; bills: number }[];
   by_category_month: { category: string; revenue: number }[];
@@ -96,6 +99,9 @@ export default function DashboardClient({ data, shopName, readOnly = false }: { 
   const kpis = [
     { label: "ยอดขายวันนี้", value: fmtBaht(k.today_total), sub: `${k.today_bills} บิล`, delta: <Delta cur={k.today_total} prev={k.yesterday_total} suffix="เทียบเมื่อวาน" /> },
     { label: "ยอดขายเดือนนี้", value: fmtBaht(k.month_total), sub: `${k.month_bills} บิล`, delta: <Delta cur={k.month_total} prev={k.prev_total} /> },
+    { label: "กำไรก่อนหักค่าธรรมเนียม (วันนี้)", value: fmtBaht(k.today_gross ?? 0), sub: "ยอดขาย − ต้นทุนสินค้า", delta: <Delta cur={k.today_gross ?? 0} prev={k.yesterday_gross ?? 0} suffix="เทียบเมื่อวาน" /> },
+    { label: "กำไรหลังหักทุน+ค่าธรรมเนียม (วันนี้)", value: fmtBaht(k.today_profit ?? 0), sub: `ค่าธรรมเนียมแพลตฟอร์มวันนี้ ${fmtBaht(k.today_fee ?? 0)}`, delta: <Delta cur={k.today_profit ?? 0} prev={k.yesterday_profit ?? 0} suffix="เทียบเมื่อวาน" /> },
+    { label: "กำไรก่อนหักค่าธรรมเนียม (เดือนนี้)", value: fmtBaht(k.month_gross ?? 0), sub: `ค่าธรรมเนียมเดือนนี้ ${fmtBaht(k.month_fee ?? 0)}`, delta: <p className="mt-1 text-[11px] text-gray-400">หลังหักค่าธรรมเนียม {fmtBaht(k.month_profit)}</p> },
     { label: "กำไรหลังหักทุน+ค่าธรรมเนียม (เดือนนี้)", value: fmtBaht(k.month_profit), sub: `อัตรากำไร ${marginPct.toFixed(1)}%`, delta: <Delta cur={k.month_profit} prev={k.prev_profit} /> },
     { label: "ยอดเฉลี่ยต่อบิล (เดือนนี้)", value: fmtBaht(avgBill), sub: "", delta: <Delta cur={avgBill} prev={prevAvg} /> },
     { label: "มูลค่าสต๊อก (ราคาทุน)", value: fmtBaht(data.stock.cost_value), sub: `ถ้าขายหมดได้ ${fmtBaht(data.stock.retail_value)}`, delta: <p className="mt-1 text-[11px] text-gray-400">{data.stock.sku_count.toLocaleString()} รายการ · หมด {data.stock.out_of_stock}</p> },
@@ -193,8 +199,41 @@ export default function DashboardClient({ data, shopName, readOnly = false }: { 
           <BarLineChart
             labels={dailyLabels}
             bars={[{ name: "ยอดขาย", color: CHART_COLORS[0], values: data.daily.map((d) => Number(d.revenue)) }]}
+            line={{ name: "กำไรหลังหักทุน+ค่าธรรมเนียม", color: CHART_COLORS[1], values: data.daily.map((d) => Number(d.profit ?? 0)) }}
           />
         )}
+      </Card>
+
+      <Card title="กำไรรายวัน (30 วันล่าสุด)">
+        <div className="max-h-80 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-white">
+              <tr className="border-b text-left text-xs text-gray-500">
+                <th className="py-2">วันที่</th>
+                <th className="py-2 text-right">บิล</th>
+                <th className="py-2 text-right">ยอดขาย</th>
+                <th className="py-2 text-right">กำไรก่อนหักค่าธรรมเนียม</th>
+                <th className="py-2 text-right">กำไรหลังหักทุน+ค่าธรรมเนียม</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...data.daily].reverse().map((d) => {
+                const dt = new Date(d.d + "T00:00:00");
+                const profit = Number(d.profit ?? 0);
+                return (
+                  <tr key={d.d} className="border-b last:border-0">
+                    <td className="py-1.5 text-gray-700">{dt.toLocaleDateString("th-TH", { weekday: "short", day: "numeric", month: "short" })}</td>
+                    <td className="py-1.5 text-right text-gray-500">{d.bills}</td>
+                    <td className="py-1.5 text-right">{fmtBaht(Number(d.revenue))}</td>
+                    <td className="py-1.5 text-right text-gray-700">{fmtBaht(Number(d.gross ?? 0))}</td>
+                    <td className={`py-1.5 text-right font-semibold ${profit < 0 ? "text-red-600" : "text-emerald-600"}`}>{fmtBaht(profit)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-[11px] text-gray-400">กำไรก่อนหักค่าธรรมเนียม = ยอดขาย − ต้นทุนสินค้า · กำไรหลังหัก = หักค่าธรรมเนียมแพลตฟอร์มด้วย (ยังไม่รวมรายจ่ายอื่น เช่น ค่าเช่า)</p>
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">

@@ -34,8 +34,27 @@ export default async function SalesPage({
     .order("created_at", { ascending: false })
     .limit(500);
 
+  // รายการสินค้าในแต่ละบิล (ชื่อ/จำนวน + ต้นทุนสำหรับแอดมินเพื่อคำนวณกำไรต่อบิล)
+  const isAdmin = profile?.role === "admin";
+  const saleIds = (sales ?? []).map((s: any) => s.id as string);
+  const itemsBySale: Record<string, { name: string; qty: number; cost: number | null }[]> = {};
+  for (let i = 0; i < saleIds.length; i += 80) {
+    const { data: rows } = await supabase
+      .from("sale_items")
+      .select("sale_id, product_name, qty, cost_price")
+      .in("sale_id", saleIds.slice(i, i + 80));
+    for (const r of rows ?? []) {
+      (itemsBySale[r.sale_id] ??= []).push({
+        name: r.product_name,
+        qty: Number(r.qty),
+        cost: isAdmin ? Number(r.cost_price ?? 0) * Number(r.qty) : null,
+      });
+    }
+  }
+
   return (
     <SalesClient
+      itemsBySale={itemsBySale}
       sales={sales ?? []}
       isAdmin={profile?.role === "admin"}
       startDate={toISODate(startDate)}

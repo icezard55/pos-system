@@ -183,12 +183,14 @@ function saleDateGroupLabel(iso: string): string {
 
 export default function SalesClient({
   sales,
+  itemsBySale = {},
   isAdmin,
   startDate,
   endDate,
   currentUserEmail,
 }: {
   sales: Sale[];
+  itemsBySale?: Record<string, { name: string; qty: number; cost: number | null }[]>;
   isAdmin: boolean;
   startDate: string;
   endDate: string;
@@ -264,6 +266,17 @@ export default function SalesClient({
   // รายการถ่ายรูปตีกลับ/ยกเลิกที่ AI หาบิลไม่เจอ ค้างไว้ให้กลับมาค้นหาด้วยมือทีหลัง
   const [unmatchedList, setUnmatchedList] = useState<UnmatchedReturnPhoto[]>([]);
   const [unmatchedOpen, setUnmatchedOpen] = useState(false);
+
+  const fmt2 = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // กำไรต่อบิล = เงินที่ได้จริง (หลังหักค่าธรรมเนียมแพลตฟอร์ม) − ต้นทุนสินค้า
+  function saleProfit(s: Sale) {
+    const its = itemsBySale[s.id];
+    if (!its || its.length === 0 || its.some((x) => x.cost == null)) return null;
+    const cost = its.reduce((t, x) => t + (x.cost ?? 0), 0);
+    const fee = Number(s.platform_fee_amount ?? 0);
+    const net = s.platform_net_actual != null ? Number(s.platform_net_actual) : Number(s.total) - fee;
+    return { cost, fee: s.platform_net_actual != null ? Number(s.total) - Number(s.platform_net_actual) : fee, profit: net - cost, actual: s.platform_net_actual != null };
+  }
 
   const filtered = sales.filter(
     (s) =>
@@ -1550,6 +1563,14 @@ export default function SalesClient({
                   </div>
                   <p className="mb-2 text-xs text-gray-500">{new Date(s.created_at).toLocaleString("th-TH")}</p>
                   <p className="mb-2 text-sm text-gray-600">{s.customer_name ?? "-"} · {s.payment_method}</p>
+                  {(itemsBySale[s.id] ?? []).length > 0 && (
+                    <div className="mb-2 rounded-lg bg-gray-50 px-2 py-1.5 text-xs text-gray-600">
+                      {(itemsBySale[s.id] ?? []).map((it, k) => (
+                        <p key={k}>{it.name} ×{it.qty}</p>
+                      ))}
+                      {isAdmin && !isVoid && (() => { const p = saleProfit(s); return p ? <p className="mt-1 font-semibold text-emerald-700">กำไรสุทธิ ฿{fmt2(p.profit)} <span className="font-normal text-gray-400">(ทุน ฿{fmt2(p.cost)}{p.fee > 0 ? ` · ค่าธรรมเนียม ฿${fmt2(p.fee)}` : ""})</span></p> : null; })()}
+                    </div>
+                  )}
                   <div className="mb-3 flex flex-wrap items-center gap-1">
                     {s.source === "imported" && (
                       <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-700">นำเข้า</span>
@@ -1623,9 +1644,11 @@ export default function SalesClient({
               <th className="px-4 py-3">เลขที่บิล</th>
               <th className="px-4 py-3">วันที่</th>
               <th className="px-4 py-3">ลูกค้า</th>
+              <th className="px-4 py-3">รายการสินค้า</th>
               <th className="px-4 py-3">ชำระโดย</th>
               <th className="px-4 py-3">สถานะ</th>
               <th className="px-4 py-3 text-right">ยอดสุทธิ</th>
+              <th className="px-4 py-3 text-right">กำไร/บิล<br /><span className="text-[10px] font-normal">(หลังหักทุน+ค่าธรรมเนียม)</span></th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -1641,7 +1664,7 @@ export default function SalesClient({
                   <Fragment key={s.id}>
                     {showGroupHeader && (
                       <tr key={`group-${s.id}`} className="bg-gray-100">
-                        <td colSpan={8} className="px-4 py-2 text-xs font-semibold text-gray-500">
+                        <td colSpan={11} className="px-4 py-2 text-xs font-semibold text-gray-500">
                           {group}
                         </td>
                       </tr>
@@ -1664,6 +1687,11 @@ export default function SalesClient({
                   </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString("th-TH")}</td>
                   <td className="px-4 py-3">{s.customer_name ?? "-"}</td>
+                  <td className="max-w-[16rem] px-4 py-3 text-xs text-gray-600">
+                    {(itemsBySale[s.id] ?? []).map((it, k) => (
+                      <p key={k} className="truncate" title={it.name}>{it.name} ×{it.qty}</p>
+                    ))}
+                  </td>
                   <td className="px-4 py-3 text-gray-500">{s.payment_method}</td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-1">
@@ -1694,6 +1722,20 @@ export default function SalesClient({
                         {s.platform_net_actual != null ? "เงินเข้าจริง ✓" : "เงินเข้า"} <span className="font-semibold text-emerald-600">฿{Number(s.platform_net_actual ?? Number(s.total) - Number(s.platform_fee_amount)).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
                       </div>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {isAdmin && !isVoid ? (() => {
+                      const p = saleProfit(s);
+                      if (!p) return <span className="text-gray-300">-</span>;
+                      return (
+                        <div>
+                          <p className={`font-semibold ${p.profit < 0 ? "text-red-600" : "text-emerald-600"}`}>฿{fmt2(p.profit)}</p>
+                          <p className="text-[10px] leading-tight text-gray-400">
+                            ทุน ฿{fmt2(p.cost)}{p.fee > 0 ? ` · ธรรมเนียม ฿${fmt2(p.fee)}${p.actual ? " ✓" : ""}` : ""}
+                          </p>
+                        </div>
+                      );
+                    })() : <span className="text-gray-300">-</span>}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
@@ -1730,7 +1772,7 @@ export default function SalesClient({
               });
             })()}
             {filtered.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400">ไม่มีรายการขาย</td></tr>
+              <tr><td colSpan={11} className="px-4 py-10 text-center text-gray-400">ไม่มีรายการขาย</td></tr>
             )}
           </tbody>
         </table>

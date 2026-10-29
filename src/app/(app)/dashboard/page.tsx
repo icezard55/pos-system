@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import DashboardClient, { type DashboardData } from "./DashboardClient";
+import MfaBanner from "./MfaBanner";
 
 function startOfToday() {
   const d = new Date();
@@ -56,6 +57,7 @@ export default async function DashboardPage() {
 
   return (
     <div>
+      {isAdmin && <MfaBanner />}
       {isAdmin && summary ? (
         <DashboardClient data={summary as DashboardData} shopName={settings?.shop_name || "ร้านของคุณ"} />
       ) : (

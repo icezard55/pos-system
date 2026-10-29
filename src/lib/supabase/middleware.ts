@@ -37,6 +37,16 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // ยืนยันตัวตน 2 ชั้น: ถ้าบัญชีเปิด 2FA แล้วแต่ session ยังไม่ผ่านรหัส 6 หลัก → บังคับไปหน้า /mfa
+  if (user && !isPublicRoute && !request.nextUrl.pathname.startsWith("/mfa")) {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+      const url = request.nextUrl.clone();
+      url.pathname = "/mfa";
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (user && isAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";

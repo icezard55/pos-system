@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { AppUser, Role } from "@/lib/types";
@@ -18,6 +18,20 @@ export default function UsersClient({
   const [users, setUsers] = useState(initialUsers);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(loadError);
+  const [mfa, setMfa] = useState<Record<string, boolean>>({});
+
+  async function loadMfa() {
+    const { data } = await supabase.rpc("list_shop_mfa_status");
+    setMfa(Object.fromEntries(((data as { user_id: string; mfa_enabled: boolean }[]) ?? []).map((r) => [r.user_id, r.mfa_enabled])));
+  }
+  useEffect(() => { loadMfa(); /* eslint-disable-next-line */ }, []);
+
+  async function resetMfa(user: AppUser) {
+    if (!confirm(`รีเซ็ต 2FA ของ ${user.email ?? user.full_name}? ผู้ใช้จะล็อกอินด้วยรหัสผ่านอย่างเดียว และต้องตั้งค่า 2FA ใหม่เอง`)) return;
+    const { error } = await supabase.rpc("admin_reset_user_mfa", { p_user_id: user.id });
+    if (error) { setError(error.message); return; }
+    loadMfa();
+  }
 
   async function handleRoleChange(user: AppUser, role: Role) {
     if (user.id === currentUserId && role !== "admin") {
@@ -49,6 +63,7 @@ export default function UsersClient({
               <th className="px-4 py-3">ชื่อ</th>
               <th className="px-4 py-3">สมัครเมื่อ</th>
               <th className="px-4 py-3">สิทธิ์</th>
+              <th className="px-4 py-3">2FA</th>
             </tr>
           </thead>
           <tbody>
@@ -70,10 +85,20 @@ export default function UsersClient({
                     <option value="admin">ผู้ดูแลระบบ</option>
                   </select>
                 </td>
+                <td className="px-4 py-3">
+                  {mfa[u.id] ? (
+                    <span className="flex items-center gap-2">
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">เปิดอยู่ ✓</span>
+                      <button onClick={() => resetMfa(u)} className="text-xs text-red-600 hover:underline">รีเซ็ต</button>
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">ยังไม่เปิด</span>
+                  )}
+                </td>
               </tr>
             ))}
             {users.length === 0 && (
-              <tr><td colSpan={4} className="px-4 py-10 text-center text-gray-400">ไม่มีผู้ใช้</td></tr>
+              <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">ไม่มีผู้ใช้</td></tr>
             )}
           </tbody>
         </table>

@@ -27,6 +27,7 @@ const links = [
   { href: "/users", label: "จัดการผู้ใช้", icon: "👥", roles: ["admin"] },
   { href: "/audit-log", label: "ประวัติการดำเนินการ", icon: "🔍", roles: ["admin"] },
   { href: "/settings", label: "ตั้งค่าร้าน", icon: "⚙️", roles: ["admin"] },
+  { href: "/security", label: "ความปลอดภัยบัญชี", icon: "🔐", roles: ["admin", "cashier"] },
 ];
 
 const ownerLink = { href: "/super-admin", label: "จัดการร้าน SaaS", icon: "🏢" };

@@ -44,6 +44,7 @@ export default function PosClient({
 
   // customer / tax invoice
   const [customerName, setCustomerName] = useState("");
+  const [customerName2, setCustomerName2] = useState("");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -601,6 +602,9 @@ export default function PosClient({
       });
       if (error) throw error;
       const saleId = data?.[0]?.sale_id;
+      if (saleId && customerName2.trim()) {
+        await supabase.rpc("set_sale_customer_name2", { p_sale_id: saleId, p_name: customerName2.trim() });
+      }
       const isCashSale = !splitMode && singleMethod === "cash";
       const changeAmount = isCashSale
         ? Math.round(((Number(cashReceived) || total) - total) * 100) / 100
@@ -608,6 +612,7 @@ export default function PosClient({
       setCart([]);
       setBillDiscount("0");
       setCustomerName("");
+      setCustomerName2("");
       setSelectedCustomer(null);
       setCustomerTaxId("");
       setCustomerAddress("");
@@ -1034,6 +1039,12 @@ export default function PosClient({
               </div>
             </div>
           )}
+          <input
+            value={customerName2}
+            onChange={(e) => setCustomerName2(e.target.value)}
+            placeholder="ชื่อลูกค้าบรรทัดที่ 2 (ไม่บังคับ · แสดงบนใบเสร็จ)"
+            className="w-full rounded-lg border px-3 py-1.5 text-sm"
+          />
           {isWholesale && (
             <p className="text-[11px] text-sky-600">ลูกค้าประเภทลูกค้าส่ง — ระบบใช้ราคาขายส่งอัตโนมัติสำหรับสินค้าที่ตั้งราคาส่งไว้</p>
           )}

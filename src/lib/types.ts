@@ -114,6 +114,7 @@ export interface Sale {
   sale_no: string;
   cashier_id: string | null;
   customer_name: string | null;
+  customer_name2?: string | null;
   customer_id: string | null;
   customer_tax_id: string | null;
   customer_address: string | null;

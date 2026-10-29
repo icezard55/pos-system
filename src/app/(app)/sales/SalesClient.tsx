@@ -267,6 +267,13 @@ export default function SalesClient({
   const [unmatchedList, setUnmatchedList] = useState<UnmatchedReturnPhoto[]>([]);
   const [unmatchedOpen, setUnmatchedOpen] = useState(false);
 
+  async function editName2(s: Sale) {
+    const v = prompt("ชื่อลูกค้าบรรทัดที่ 2 (แสดงบนใบเสร็จ) — เว้นว่างเพื่อลบ", s.customer_name2 ?? "");
+    if (v === null) return;
+    const { error } = await supabase.rpc("set_sale_customer_name2", { p_sale_id: s.id, p_name: v });
+    if (error) { alert(error.message); return; }
+    router.refresh();
+  }
   const fmt2 = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   // กำไรต่อบิล = เงินที่ได้จริง (หลังหักค่าธรรมเนียมแพลตฟอร์ม) − ต้นทุนสินค้า
   function saleProfit(s: Sale) {
@@ -1562,7 +1569,10 @@ export default function SalesClient({
                     </p>
                   </div>
                   <p className="mb-2 text-xs text-gray-500">{new Date(s.created_at).toLocaleString("th-TH")}</p>
-                  <p className="mb-2 text-sm text-gray-600">{s.customer_name ?? "-"} · {s.payment_method}</p>
+                  <p className="mb-2 text-sm text-gray-600">
+                    {s.customer_name ?? "-"}{s.customer_name2 ? ` / ${s.customer_name2}` : ""} · {s.payment_method}
+                    <button onClick={() => editName2(s)} className="ml-2 text-[11px] text-brand">{s.customer_name2 ? "✏️ ชื่อบรรทัด 2" : "+ ชื่อบรรทัด 2"}</button>
+                  </p>
                   {(itemsBySale[s.id] ?? []).length > 0 && (
                     <div className="mb-2 rounded-lg bg-gray-50 px-2 py-1.5 text-xs text-gray-600">
                       {(itemsBySale[s.id] ?? []).map((it, k) => (
@@ -1686,7 +1696,13 @@ export default function SalesClient({
 
                   </td>
                   <td className="px-4 py-3 text-gray-500">{new Date(s.created_at).toLocaleString("th-TH")}</td>
-                  <td className="px-4 py-3">{s.customer_name ?? "-"}</td>
+                  <td className="px-4 py-3">
+                    <p>{s.customer_name ?? "-"}</p>
+                    {s.customer_name2 && <p className="text-xs text-gray-600">{s.customer_name2}</p>}
+                    <button onClick={() => editName2(s)} className="text-[11px] text-brand hover:underline">
+                      {s.customer_name2 ? "✏️ แก้ชื่อบรรทัด 2" : "+ ชื่อบรรทัด 2"}
+                    </button>
+                  </td>
                   <td className="max-w-[16rem] px-4 py-3 text-xs text-gray-600">
                     {(itemsBySale[s.id] ?? []).map((it, k) => (
                       <p key={k} className="truncate" title={it.name}>{it.name} ×{it.qty}</p>

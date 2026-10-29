@@ -137,12 +137,13 @@ export default function ReceiptClient({
           <p className="text-xs text-gray-500">เลขที่บิล: {sale.sale_no}</p>
           <p className="text-xs text-gray-500">{dt.toLocaleString("th-TH")}</p>
           {sale.show_customer_info === false ? (
-            (sale.customer_name || sale.customer_address) && (
+            (sale.customer_name || sale.customer_name2 || sale.customer_address) && (
               <p className="text-xs text-gray-500">ชื่อ-ที่อยู่: .....................................................</p>
             )
           ) : (
             <>
               {sale.customer_name && <p className="text-xs text-gray-500">ลูกค้า: {sale.customer_name}</p>}
+              {sale.customer_name2 && <p className="text-xs text-gray-500">{sale.customer_name ? "" : "ลูกค้า: "}{sale.customer_name2}</p>}
               {sale.customer_tax_id && <p className="text-xs text-gray-500">เลขผู้เสียภาษีลูกค้า: {sale.customer_tax_id}</p>}
               {sale.customer_address && <p className="text-xs text-gray-500">{sale.customer_address}</p>}
             </>

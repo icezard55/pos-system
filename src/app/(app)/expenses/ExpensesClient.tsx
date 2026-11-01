@@ -84,6 +84,42 @@ export default function ExpensesClient({
 
   const [error, setError] = useState<string | null>(null);
 
+  // ค้นหารายจ่ายย้อนหลังทั้งหมด (เช่น ทะเบียนรถ ชื่อร้าน ในหมายเหตุ)
+  const [q, setQ] = useState("");
+  const [qCat, setQCat] = useState<string>("all");
+  const [qFrom, setQFrom] = useState("");
+  const [qTo, setQTo] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<typeof initialExpenses | null>(null);
+
+  async function runSearch(e?: React.FormEvent) {
+    e?.preventDefault();
+    if (!q.trim() && qCat === "all" && !qFrom && !qTo) { setResults(null); return; }
+    setSearching(true);
+    setError(null);
+    let query = supabase.from("expenses").select("*").order("expense_date", { ascending: false }).limit(2000);
+    if (q.trim()) {
+      // เว้นวรรคถือเป็นตัวคั่นยืดหยุ่น: "กข 1234" เจอทั้ง "กข1234" และ "กข 1234"
+      const pattern = "%" + q.trim().replace(/[%_]/g, "").split(/\s+/).join("%") + "%";
+      query = query.ilike("note", pattern);
+    }
+    if (qCat !== "all") query = query.eq("category", qCat);
+    if (qFrom) query = query.gte("expense_date", qFrom);
+    if (qTo) query = query.lte("expense_date", qTo);
+    const { data, error } = await query;
+    setSearching(false);
+    if (error) { setError(error.message); return; }
+    setResults((data ?? []) as typeof initialExpenses);
+  }
+  function clearSearch() {
+    setQ(""); setQCat("all"); setQFrom(""); setQTo(""); setResults(null);
+  }
+  const shown = results ?? expenses;
+  const shownTotal = shown.reduce((t, e) => t + Number(e.amount), 0);
+  const shownByCat = Object.entries(
+    shown.reduce<Record<string, number>>((m, e) => { m[e.category] = (m[e.category] ?? 0) + Number(e.amount); return m; }, {})
+  ).sort((a, b) => b[1] - a[1]);
+
   const todayStr = toLocalISODate(new Date());
   const totalLoaded = expenses.reduce((s, e) => s + Number(e.amount), 0);
   const thisMonthKey = todayStr.slice(0, 7);
@@ -137,6 +173,7 @@ export default function ExpensesClient({
       if (error) throw error;
       if (docPath) await supabase.storage.from("documents").remove([docPath]);
       setExpenses((prev) => prev.filter((e) => e.id !== id));
+      setResults((prev) => prev && prev.filter((e) => e.id !== id));
       router.refresh();
     } catch (err: any) {
       setError(err.message ?? "ลบไม่สำเร็จ");
@@ -452,7 +489,7 @@ export default function ExpensesClient({
 
       <div className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-semibold text-gray-800">รายจ่ายทั้งหมด (200 รายการล่าสุด)</h2>
+          <h2 className="font-semibold text-gray-800">{results ? `ผลการค้นหา (${results.length} รายการ)` : "รายจ่ายทั้งหมด (200 รายการล่าสุด)"}</h2>
           <button
             onClick={() => setShowAddExpense((v) => !v)}
             className="rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-dark"
@@ -479,6 +516,48 @@ export default function ExpensesClient({
           </form>
         )}
 
+        <form onSubmit={runSearch} className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-gray-50 p-3 sm:grid-cols-6">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="🔍 ค้นหาในหมายเหตุ เช่น ทะเบียนรถ กข 1234"
+            className="col-span-2 rounded-lg border px-3 py-2 text-sm"
+          />
+          <select value={qCat} onChange={(e) => setQCat(e.target.value)} className="rounded-lg border px-2 py-2 text-sm">
+            <option value="all">ทุกหมวด</option>
+            {(Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[]).map((c) => (
+              <option key={c} value={c}>{EXPENSE_CATEGORY_LABEL[c]}</option>
+            ))}
+          </select>
+          <input type="date" value={qFrom} onChange={(e) => setQFrom(e.target.value)} className="rounded-lg border px-2 py-2 text-sm" title="ตั้งแต่วันที่" />
+          <input type="date" value={qTo} onChange={(e) => setQTo(e.target.value)} className="rounded-lg border px-2 py-2 text-sm" title="ถึงวันที่" />
+          <div className="flex gap-2">
+            <button type="submit" disabled={searching} className="flex-1 rounded-lg bg-brand px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">
+              {searching ? "กำลังค้น..." : "ค้นหา"}
+            </button>
+            {results && <button type="button" onClick={clearSearch} className="rounded-lg border bg-white px-3 py-2 text-sm">ล้าง</button>}
+          </div>
+          {results && (
+            <div className="col-span-2 rounded-lg bg-white p-3 text-sm sm:col-span-6">
+              <p className="font-semibold">
+                พบ {results.length} รายการ · รวม <span className="text-red-600">฿{shownTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                {results.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-gray-500">
+                    ({new Date(results[results.length - 1].expense_date).toLocaleDateString("th-TH")} – {new Date(results[0].expense_date).toLocaleDateString("th-TH")})
+                  </span>
+                )}
+              </p>
+              {shownByCat.length > 1 && (
+                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-600">
+                  {shownByCat.map(([c, v]) => (
+                    <span key={c}>{EXPENSE_CATEGORY_LABEL[c as ExpenseCategory] ?? c} ฿{v.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </form>
+
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -492,7 +571,7 @@ export default function ExpensesClient({
               </tr>
             </thead>
             <tbody>
-              {expenses.map((e) => (
+              {shown.map((e) => (
                 <tr key={e.id} className={`border-b last:border-0 ${e.expense_date > todayStr ? "bg-orange-50/50" : ""}`}>
                   <td className="py-2 text-gray-500">{new Date(e.expense_date).toLocaleDateString("th-TH")}</td>
                   <td className="py-2">{EXPENSE_CATEGORY_LABEL[e.category]}</td>
@@ -511,7 +590,10 @@ export default function ExpensesClient({
                         recordId={e.id}
                         shopId={shopId}
                         documentPath={e.document_path ?? null}
-                        onChanged={(p) => setExpenses((prev) => prev.map((x) => (x.id === e.id ? { ...x, document_path: p } : x)))}
+                        onChanged={(p) => {
+                          setExpenses((prev) => prev.map((x) => (x.id === e.id ? { ...x, document_path: p } : x)));
+                          setResults((prev) => prev && prev.map((x) => (x.id === e.id ? { ...x, document_path: p } : x)));
+                        }}
                       />
                       {e.source !== "po_freight" && (
                         <button onClick={() => handleDeleteExpense(e.id)} className="text-xs text-red-500 hover:underline">ลบ</button>
@@ -520,8 +602,8 @@ export default function ExpensesClient({
                   </td>
                 </tr>
               ))}
-              {expenses.length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-gray-400">ยังไม่มีรายการรายจ่าย</td></tr>
+              {shown.length === 0 && (
+                <tr><td colSpan={6} className="py-6 text-center text-gray-400">{results ? "ไม่พบรายการที่ค้นหา" : "ยังไม่มีรายการรายจ่าย"}</td></tr>
               )}
             </tbody>
           </table>

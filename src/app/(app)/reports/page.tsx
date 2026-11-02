@@ -25,7 +25,7 @@ export default async function ReportsPage({
 
   const { data: sales } = await supabase
     .from("sales")
-    .select("id, sale_no, total, subtotal, discount, payment_method, status, created_at")
+    .select("id, sale_no, total, subtotal, discount, payment_method, status, created_at, platform_fee_amount, platform_net_actual")
     .gte("created_at", startDate.toISOString())
     .lte("created_at", endDate.toISOString())
     .eq("status", "completed")
@@ -136,11 +136,17 @@ export default async function ReportsPage({
 
   const grandTotal = (sales ?? []).reduce((s, r) => s + Number(r.total), 0);
   const grandProfit = grandTotal - totalCost;
+  // ค่าธรรมเนียมแพลตฟอร์ม: ใช้ค่าจริงจากไฟล์รายได้ (total − เงินเข้าจริง) ถ้ามี ไม่งั้นใช้ค่าประมาณ
+  const grandFee = (sales ?? []).reduce((s, r: any) => {
+    const fee = r.platform_net_actual != null ? Number(r.total) - Number(r.platform_net_actual) : Number(r.platform_fee_amount ?? 0);
+    return s + Math.max(fee, 0);
+  }, 0);
 
   return (
     <ReportsClient
       grandTotal={grandTotal}
       grandProfit={grandProfit}
+      grandFee={grandFee}
       dayRows={dayRows}
       topProducts={topProducts}
       allProductSales={allProductSales}

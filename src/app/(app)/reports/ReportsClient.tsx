@@ -188,6 +188,7 @@ function SupplierMultiSelect({
 export default function ReportsClient({
   grandTotal,
   grandProfit,
+  grandFee,
   dayRows,
   topProducts,
   allProductSales,
@@ -204,6 +205,7 @@ export default function ReportsClient({
 }: {
   grandTotal: number;
   grandProfit: number;
+  grandFee: number;
   dayRows: [string, { total: number; profit: number }][];
   topProducts: [string, { qty: number; total: number; profit: number }][];
   allProductSales: [string, { qty: number; total: number; profit: number }][];
@@ -266,6 +268,9 @@ export default function ReportsClient({
   const receivableTotal = accountsReceivable.reduce((s, r) => s + Number(r.total), 0);
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
   const netProfit = grandProfit - totalExpenses;
+  const profitAfterFeeTotal = grandProfit - grandFee;
+  const marginAfterFee = grandTotal ? (profitAfterFeeTotal / grandTotal) * 100 : 0;
+  const marginBeforeFee = grandTotal ? (grandProfit / grandTotal) * 100 : 0;
   const expensesByCategory = expenses.reduce((acc, e) => {
     acc[e.category] = (acc[e.category] ?? 0) + Number(e.amount);
     return acc;
@@ -280,6 +285,9 @@ export default function ReportsClient({
       { รายการ: "มูลค่าไม่รวม VAT", จำนวนเงิน: Number(summaryVat.base.toFixed(2)) },
       { รายการ: "VAT 7%", จำนวนเงิน: Number(summaryVat.vat.toFixed(2)) },
       { รายการ: "กำไรขั้นต้นโดยประมาณ", จำนวนเงิน: Number(grandProfit.toFixed(2)) },
+      { รายการ: "ค่าธรรมเนียมแพลตฟอร์ม", จำนวนเงิน: Number(grandFee.toFixed(2)) },
+      { รายการ: "กำไรหลังหักค่าธรรมเนียม", จำนวนเงิน: Number(profitAfterFeeTotal.toFixed(2)) },
+      { รายการ: "อัตรากำไรหลังหักค่าธรรมเนียม (%)", จำนวนเงิน: Number(marginAfterFee.toFixed(1)) },
       { รายการ: "รายจ่ายทั้งหมดในช่วงนี้", จำนวนเงิน: Number(totalExpenses.toFixed(2)) },
       { รายการ: "กำไรสุทธิโดยประมาณ", จำนวนเงิน: Number(netProfit.toFixed(2)) },
       { รายการ: "มูลค่าสินค้ารับเข้าในช่วงนี้", จำนวนเงิน: Number(receivingTotal.toFixed(2)) },
@@ -469,7 +477,7 @@ export default function ReportsClient({
 
       {tab === "sales" && (
         <>
-          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <div className="rounded-2xl bg-white p-6 shadow-sm">
               <p className="text-sm text-gray-500">ยอดขายรวม ({startDate} ถึง {endDate})</p>
               <p className="mt-1 text-3xl font-bold text-brand">฿{grandTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
@@ -477,6 +485,13 @@ export default function ReportsClient({
             <div className="rounded-2xl bg-white p-6 shadow-sm">
               <p className="text-sm text-gray-500">กำไรขั้นต้นโดยประมาณ</p>
               <p className="mt-1 text-3xl font-bold text-green-600">฿{grandProfit.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+              <p className="mt-1 text-[11px] text-gray-400">อัตรากำไรก่อนหักค่าธรรมเนียม {marginBeforeFee.toFixed(1)}%</p>
+            </div>
+            <div className="rounded-2xl bg-white p-6 shadow-sm">
+              <p className="text-sm text-gray-500">กำไรหลังหักค่าธรรมเนียม</p>
+              <p className={`mt-1 text-3xl font-bold ${profitAfterFeeTotal >= 0 ? "text-green-600" : "text-red-600"}`}>฿{profitAfterFeeTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
+              <p className="mt-1 text-xs font-semibold text-emerald-700">อัตรากำไร {marginAfterFee.toFixed(1)}%</p>
+              <p className="text-[11px] text-gray-400">ค่าธรรมเนียมแพลตฟอร์ม ฿{grandFee.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
             </div>
             <div className="rounded-2xl bg-white p-6 shadow-sm">
               <p className="text-sm text-gray-500">รายจ่ายทั้งหมด</p>

@@ -189,6 +189,7 @@ export default function ReportsClient({
   grandTotal,
   grandProfit,
   grandFee,
+  grandNet,
   dayRows,
   topProducts,
   allProductSales,
@@ -206,6 +207,7 @@ export default function ReportsClient({
   grandTotal: number;
   grandProfit: number;
   grandFee: number;
+  grandNet: number;
   dayRows: [string, { total: number; profit: number }][];
   topProducts: [string, { qty: number; total: number; profit: number }][];
   allProductSales: [string, { qty: number; total: number; profit: number }][];
@@ -268,8 +270,9 @@ export default function ReportsClient({
   const receivableTotal = accountsReceivable.reduce((s, r) => s + Number(r.total), 0);
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
   const netProfit = grandProfit - totalExpenses;
-  const profitAfterFeeTotal = grandProfit - grandFee;
-  const marginAfterFee = grandTotal ? (profitAfterFeeTotal / grandTotal) * 100 : 0;
+  const totalCostAll = grandTotal - grandProfit;
+  const profitAfterFeeTotal = grandNet - totalCostAll;
+  const marginAfterFee = grandNet ? (profitAfterFeeTotal / grandNet) * 100 : 0;
   const marginBeforeFee = grandTotal ? (grandProfit / grandTotal) * 100 : 0;
   const expensesByCategory = expenses.reduce((acc, e) => {
     acc[e.category] = (acc[e.category] ?? 0) + Number(e.amount);
@@ -490,7 +493,7 @@ export default function ReportsClient({
             <div className="rounded-2xl bg-white p-6 shadow-sm">
               <p className="text-sm text-gray-500">กำไรหลังหักค่าธรรมเนียม</p>
               <p className={`mt-1 text-3xl font-bold ${profitAfterFeeTotal >= 0 ? "text-green-600" : "text-red-600"}`}>฿{profitAfterFeeTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
-              <p className="mt-1 text-xs font-semibold text-emerald-700">อัตรากำไร {marginAfterFee.toFixed(1)}%</p>
+              <p className="mt-1 text-xs font-semibold text-emerald-700">อัตรากำไร {marginAfterFee.toFixed(1)}% (ของเงินที่ได้รับ ฿{grandNet.toLocaleString("th-TH", { maximumFractionDigits: 0 })})</p>
               <p className="text-[11px] text-gray-400">ค่าธรรมเนียมแพลตฟอร์ม ฿{grandFee.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</p>
             </div>
             <div className="rounded-2xl bg-white p-6 shadow-sm">

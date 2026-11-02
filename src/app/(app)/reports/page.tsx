@@ -136,11 +136,8 @@ export default async function ReportsPage({
 
   const grandTotal = (sales ?? []).reduce((s, r) => s + Number(r.total), 0);
   const grandProfit = grandTotal - totalCost;
-  // ค่าธรรมเนียมแพลตฟอร์ม: ใช้ค่าจริงจากไฟล์รายได้ (total − เงินเข้าจริง) ถ้ามี ไม่งั้นใช้ค่าประมาณ
-  const grandFee = (sales ?? []).reduce((s, r: any) => {
-    const fee = r.platform_net_actual != null ? Number(r.total) - Number(r.platform_net_actual) : Number(r.platform_fee_amount ?? 0);
-    return s + Math.max(fee, 0);
-  }, 0);
+  // ค่าธรรมเนียมแพลตฟอร์ม: platform_fee_amount คือค่าจริงหลังอัปโหลดไฟล์รายได้ (ไม่งั้นเป็นค่าประมาณ) — ตรงกับรายจ่ายหมวดค่าธรรมเนียม
+  const grandFee = (sales ?? []).reduce((s, r: any) => s + Number(r.platform_fee_amount ?? 0), 0);
 
   return (
     <ReportsClient

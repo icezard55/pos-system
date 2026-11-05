@@ -30,6 +30,7 @@ interface Row {
   candidates: Candidate[];
   action: Action;
   updatePrice: boolean;
+  cost?: string; // ต้นทุน/หน่วย (ไม่บังคับ)
 }
 
 const HEADER: Record<string, keyof FileItem> = {
@@ -134,6 +135,7 @@ export default function TiktokSkuImport({
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [costPct, setCostPct] = useState("");
   const [stockMode, setStockMode] = useState<"none" | "add" | "set">("none");
   const [msg, setMsg] = useState<string | null>(null);
   const [writeSku, setWriteSku] = useState(false);
@@ -193,6 +195,21 @@ export default function TiktokSkuImport({
     setRows((prev) => prev && prev.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
   }
 
+  // ตั้งต้นทุนทุกรายการที่สร้างใหม่/สินค้าที่ต้นทุนยังเป็น 0 ให้เป็น % ของราคาในไฟล์
+  function fillCostPct() {
+    const pct = Number(costPct);
+    if (!(pct > 0)) return;
+    setRows((prev) =>
+      prev &&
+      prev.map((r) => {
+        if (r.status !== "review" || r.action === "skip" || !(r.item.price > 0)) return r;
+        const p = r.action === "new" ? undefined : r.candidates.find((c) => c.product.id === r.action)?.product;
+        if (r.action !== "new" && Number(p?.cost_price ?? 0) > 0) return r;
+        return { ...r, cost: String(Math.round(r.item.price * pct) / 100) };
+      })
+    );
+  }
+
   async function apply() {
     if (!rows) return;
     setBusy(true);
@@ -200,6 +217,7 @@ export default function TiktokSkuImport({
     let linked = 0, created = 0, priced = 0, skuSet = 0, autoLinked = 0;
     const errors: string[] = [];
     let stockAdj = 0;
+    let costSet = 0;
     const stockTarget = new Map<string, number>(); // product id → จำนวนรวมจากไฟล์
     try {
       const todo = rows.filter((r) => r.status === "review" && r.action !== "skip");
@@ -225,7 +243,7 @@ export default function TiktokSkuImport({
               name,
               sku: writeSku ? r.item.skuId : null,
               unit: "ชิ้น",
-              cost_price: 0,
+              cost_price: Number(r.cost) > 0 ? Number(r.cost) : 0,
               sell_price: r.item.price,
               stock_qty: stockMode !== "none" ? r.item.qty : 0,
               low_stock_threshold: 0,
@@ -241,6 +259,7 @@ export default function TiktokSkuImport({
         } else {
           const upd: Record<string, any> = {};
           const p = products.find((x) => x.id === productId);
+          if (Number(r.cost) > 0 && Number(p?.cost_price ?? 0) !== Number(r.cost)) { upd.cost_price = Number(r.cost); costSet++; }
           if (r.updatePrice && p && Number(p.sell_price) !== r.item.price && r.item.price > 0) upd.sell_price = r.item.price;
           if (writeSku && p && (p.sku ?? "") !== r.item.skuId) upd.sku = r.item.skuId;
           if (Object.keys(upd).length) {
@@ -275,6 +294,7 @@ export default function TiktokSkuImport({
       setDone(
         `เสร็จแล้ว — จับคู่ ${linked + autoLinked} รายการ · สร้างสินค้าใหม่ ${created} · อัปเดตราคา ${priced}` +
           (writeSku ? ` · เปลี่ยน SKU ${skuSet}` : "") +
+          (costSet ? ` · ตั้งต้นทุนสินค้าเดิม ${costSet}` : "") +
           (stockMode !== "none" ? ` · ปรับสต๊อกสินค้าเดิม ${stockAdj} รายการ` : "") +
           (errors.length ? ` · มีปัญหา ${errors.length} รายการ: ${errors.join(" | ")}` : "")
       );
@@ -336,6 +356,18 @@ export default function TiktokSkuImport({
                   <input type="checkbox" checked={writeSku} onChange={(e) => setWriteSku(e.target.checked)} />
                   เขียน SKU ID ทับช่อง "รหัส SKU" ของสินค้าด้วย
                 </label>
+              </div>
+
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-green-200 bg-green-50/60 p-3 text-xs text-gray-700">
+                <span className="font-medium text-sm text-gray-800">ใส่ต้นทุนสินค้าเลยไหม?</span>
+                <span className="text-gray-500">ไฟล์ไม่มีราคาทุน — กรอกในแต่ละรายการ หรือตั้งเป็น % ของราคาขายทีเดียว</span>
+                <input
+                  type="number" min={0} max={100} placeholder="เช่น 65"
+                  value={costPct} onChange={(e) => setCostPct(e.target.value)}
+                  className="w-20 rounded-lg border px-2 py-1 text-sm"
+                />
+                <span>% ของราคา</span>
+                <button type="button" onClick={fillCostPct} className="rounded-lg border border-green-300 bg-white px-3 py-1 hover:bg-green-50">ใช้กับสินค้าใหม่/ที่ต้นทุนยังเป็น 0</button>
               </div>
 
               <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-sm">
@@ -412,6 +444,17 @@ export default function TiktokSkuImport({
                           </label>
                         )}
                         {r.action === "new" && <span className="text-xs text-gray-500">สต๊อก {stockMode !== "none" ? r.item.qty : 0} · ราคา ฿{baht(r.item.price)}</span>}
+                        {r.action !== "skip" && (
+                          <label className="flex items-center gap-1 whitespace-nowrap text-xs text-gray-600">
+                            ต้นทุน/หน่วย
+                            <input
+                              type="number" min={0} step="0.01" placeholder="ไม่ระบุ"
+                              value={r.cost ?? ""} onChange={(e) => patch(i, { cost: e.target.value })}
+                              className="w-24 rounded-lg border px-2 py-1 text-sm"
+                            />
+                            {chosen && Number(chosen.cost_price) > 0 && <span className="text-gray-400">(เดิม ฿{baht(Number(chosen.cost_price))})</span>}
+                          </label>
+                        )}
                       </div>
                     </div>
                   );

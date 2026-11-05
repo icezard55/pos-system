@@ -87,6 +87,57 @@ interface DraftLine {
   productId: string;
   qty: string;
   unitCost: string;
+  // มาจากการอ่านรูปบิล
+  billText?: string; // ข้อความรายการตามบิล
+  guess?: boolean; // ระบบเดาสินค้าให้ — ต้องให้ผู้ใช้ยืนยัน
+  mismatch?: string; // เตือนเมื่อ จำนวน × ราคา ไม่ตรงกับยอดในบิล
+}
+
+// จับคู่ข้อความลายมือกับชื่อสินค้าแบบคร่าวๆ (bigram + ตัวเลขขนาด/เบอร์ต้องตรงกัน)
+function normText(s: string) {
+  return s.toLowerCase().replace(/[\s\-_/,.()\[\]*×x:+"']+/g, "");
+}
+function bigr(s: string): Set<string> {
+  const o = new Set<string>();
+  for (let i = 0; i < s.length - 1; i++) o.add(s.slice(i, i + 2));
+  return o;
+}
+function nums(s: string): string[] {
+  return s.match(/[0-9]+/g) ?? [];
+}
+function billScore(text: string, productName: string): number {
+  const a = bigr(normText(text));
+  const b = bigr(normText(productName));
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  a.forEach((g) => b.has(g) && inter++);
+  let sc = 0.6 * (inter / a.size) + 0.4 * ((2 * inter) / (a.size + b.size));
+  const na = nums(text);
+  const nb = nums(productName);
+  if (na.length && nb.length) sc = na.some((n) => nb.includes(n)) ? Math.min(1, sc + 0.15) : sc * 0.4;
+  return sc;
+}
+
+// ลดขนาดรูปก่อนส่ง AI (ลายมือยังอ่านออก แต่ส่งเร็วและไม่ใหญ่เกิน)
+async function shrinkImage(file: File, maxSide = 1800): Promise<{ base64: string; mediaType: string }> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error("เปิดรูปไม่ได้"));
+      i.src = url;
+    });
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.width * scale);
+    c.height = Math.round(img.height * scale);
+    c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+    const data = c.toDataURL("image/jpeg", 0.88);
+    return { base64: data.split(",")[1], mediaType: "image/jpeg" };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function productLabel(p: { sku: string | null; name: string } | undefined): string {
@@ -246,6 +297,9 @@ export default function PurchaseOrdersClient({
   const [payingId, setPayingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [billBusy, setBillBusy] = useState(false);
+  const [billMsg, setBillMsg] = useState<string | null>(null);
+  const billRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [editImporting, setEditImporting] = useState(false);
@@ -290,6 +344,13 @@ export default function PurchaseOrdersClient({
         p_freight_cost: Number(freightCost) || 0,
       });
       if (error) throw error;
+      // จำการจับคู่ชื่อตามบิลกับสินค้า ไว้ใช้กับบิลถัดไปของผู้จัดจำหน่ายรายนี้
+      const aliasRows = lines
+        .filter((l) => l.billText && l.productId && !l.guess && supplierId)
+        .map((l) => ({ supplier_id: supplierId, alias: l.billText!, product_id: l.productId, shop_id: shopId }));
+      if (aliasRows.length) {
+        await supabase.from("supplier_item_alias").upsert(aliasRows, { onConflict: "shop_id,supplier_id,alias" });
+      }
       const link = normalizeUrl(attachmentUrl);
       if (link && newPoId) {
         const { error: linkErr } = await supabase.rpc("set_po_attachment_url", { p_po_id: newPoId, p_url: link });
@@ -345,6 +406,104 @@ export default function PurchaseOrdersClient({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "purchase_order");
     XLSX.writeFile(wb, "template_นำเข้าใบสั่งซื้อ.xlsx");
+  }
+
+  async function handleBillImages(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0 || !supplierId) return;
+    setBillBusy(true);
+    setBillMsg(null);
+    setError(null);
+    try {
+      // ชื่อที่เคยสอนระบบไว้ของผู้จัดจำหน่ายรายนี้
+      const { data: aliasRows } = await supabase
+        .from("supplier_item_alias").select("alias, product_id").eq("supplier_id", supplierId);
+      const aliasMap = new Map<string, string>((aliasRows ?? []).map((a: any) => [normText(a.alias), a.product_id]));
+
+      const newLines: DraftLine[] = [];
+      const warnings: string[] = [];
+      let billNoFound = "";
+      let freightFound = 0;
+      const dates: string[] = [];
+
+      for (let fi = 0; fi < files.length; fi++) {
+        setBillMsg(`กำลังอ่านรูปที่ ${fi + 1}/${files.length}...`);
+        const img = await shrinkImage(files[fi]);
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), 65000);
+        let res: Response;
+        try {
+          res = await fetch("/api/ai/read-bill", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ imageBase64: img.base64, mediaType: img.mediaType }),
+            signal: ctrl.signal,
+          });
+        } finally {
+          clearTimeout(t);
+        }
+        const json = await res.json();
+        if (!res.ok) throw new Error(`รูปที่ ${fi + 1}: ${json.error ?? "อ่านไม่สำเร็จ"}`);
+        const r = json.result;
+        if (r.bill_no && !billNoFound) billNoFound = String(r.bill_no);
+        if (r.bill_date) dates.push(String(r.bill_date));
+        freightFound += Number(r.freight) || 0;
+
+        let sum = 0;
+        for (const l of r.lines as any[]) {
+          const qty = Number(l.qty) || 0;
+          const price = Number(l.unit_price) || 0;
+          if (qty <= 0) continue;
+          const text = String(l.text ?? "").trim();
+          const amount = l.amount != null ? Number(l.amount) : null;
+          sum += amount ?? qty * price;
+
+          let productId = aliasMap.get(normText(text)) ?? "";
+          let guess = false;
+          if (!productId && text) {
+            let best: { id: string; sc: number } | null = null;
+            for (const p of products) {
+              const sc = billScore(text, p.name);
+              if (!best || sc > best.sc) best = { id: p.id, sc };
+            }
+            if (best && best.sc >= 0.45) {
+              productId = best.id;
+              guess = true;
+            }
+          }
+          const mismatch = amount != null && Math.abs(qty * price - amount) > 0.5
+            ? `${qty} × ${price} = ${(qty * price).toLocaleString("th-TH")} แต่บิลเขียน ${amount.toLocaleString("th-TH")} — ตรวจจำนวน/ราคา`
+            : undefined;
+          newLines.push({ productId, qty: String(qty), unitCost: String(price), billText: text, guess, mismatch });
+        }
+        if (r.subtotal_written != null && Math.abs(Number(r.subtotal_written) - sum) > 0.5) {
+          warnings.push(`รูปที่ ${fi + 1}: ยอดรวมที่อ่านได้ ${sum.toLocaleString("th-TH")} ไม่ตรงกับยอดในบิล ${Number(r.subtotal_written).toLocaleString("th-TH")} (อาจอ่านตัวเลขผิดบางบรรทัด)`);
+        }
+        for (const u of (r.uncertain ?? []) as string[]) warnings.push(`รูปที่ ${fi + 1}: ${u}`);
+      }
+
+      if (newLines.length === 0) {
+        setBillMsg("อ่านรายการสินค้าจากรูปไม่ได้ ลองถ่ายใหม่ให้เห็นทั้งใบ แสงสว่างพอ");
+        return;
+      }
+      // แทนที่บรรทัดว่างเริ่มต้น แต่คงรายการที่กรอกไว้แล้ว
+      setLines((prev) => [...prev.filter((l) => l.productId && Number(l.qty) > 0), ...newLines]);
+      if (billNoFound && !supplierInvoiceNo) setSupplierInvoiceNo(billNoFound);
+      if (freightFound > 0 && !freightCost) setFreightCost(String(freightFound));
+      if (dates.length && !note) setNote(`อ่านจากรูปบิล วันที่ ${dates.join(", ")}`);
+      const needPick = newLines.filter((l) => !l.productId).length;
+      const guessed = newLines.filter((l) => l.guess).length;
+      setBillMsg(
+        `อ่านได้ ${newLines.length} รายการ — ต้องเลือกสินค้าเอง ${needPick} · ระบบเดาให้ (ตรวจสอบ) ${guessed} · ตรงกับที่เคยสอนไว้ ${newLines.length - needPick - guessed}` +
+          (freightFound > 0 ? ` · ค่าส่งในบิล ฿${freightFound.toLocaleString("th-TH")} ใส่ช่องค่าขนส่งให้แล้ว` : "") +
+          (warnings.length ? ` | ⚠️ ${warnings.join(" | ")}` : "")
+      );
+    } catch (err: any) {
+      setBillMsg(err?.name === "AbortError" ? "อ่านรูปนานเกินไป ลองใหม่" : `อ่านบิลไม่สำเร็จ: ${err.message ?? err}`);
+    } finally {
+      setBillBusy(false);
+      if (billRef.current) billRef.current.value = "";
+    }
   }
 
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -753,6 +912,24 @@ export default function PurchaseOrdersClient({
             </label>
             {!supplierId && <span className="text-xs text-gray-400">กรุณาเลือกผู้จัดจำหน่ายก่อนดาวน์โหลด/นำเข้า</span>}
           </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-blue-50 p-3">
+            <span className="text-xs font-medium text-gray-600">อ่านรายการจากรูปบิล (ลายมือ):</span>
+            <label
+              className={`cursor-pointer rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-xs hover:bg-blue-50 ${
+                !supplierId || billBusy ? "cursor-not-allowed opacity-50" : ""
+              }`}
+            >
+              {billBusy ? "กำลังอ่าน..." : "📷 อ่านบิลจากรูป"}
+              <input
+                ref={billRef} type="file" accept="image/*" multiple
+                onChange={handleBillImages} disabled={!supplierId || billBusy} className="hidden"
+              />
+            </label>
+            <span className="text-xs text-gray-400">
+              {supplierId ? "เลือกได้หลายรูป — ระบบอ่านแล้วใส่ในรายการด้านล่าง ให้ตรวจก่อนบันทึก" : "เลือกผู้จัดจำหน่ายก่อน"}
+            </span>
+          </div>
+          {billMsg && <p className="text-xs text-blue-700">{billMsg}</p>}
           <p className="text-xs text-gray-400">
             รองรับไฟล์รายการสินค้าที่มีคอลัมน์ รหัสสินค้า/ชื่อสินค้า, ราคาทุน และคอลัมน์จำนวน (เช่น "จำนวน", "จำนวนรับของ", "จำนวนสั่งซื้อ") — ไม่ต้องใช้เทมเพลตด้านบนก็ได้ ถ้าไฟล์มีคอลัมน์เหล่านี้อยู่แล้ว
           </p>
@@ -769,6 +946,7 @@ export default function PurchaseOrdersClient({
                     const p = products.find((pp) => pp.id === id);
                     updateLine(idx, {
                       productId: id,
+                      guess: false,
                       unitCost: l.unitCost || (p ? String(p.cost_price) : l.unitCost),
                     });
                   }}
@@ -785,6 +963,19 @@ export default function PurchaseOrdersClient({
                 />
                 {lines.length > 1 && (
                   <button type="button" onClick={() => removeLine(idx)} className="text-red-500">✕</button>
+                )}
+                {l.billText && (
+                  <div className="w-full pl-1 text-[11px]">
+                    <span className="text-gray-500">ตามบิล: {l.billText}</span>
+                    {!l.productId && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-red-700">เลือกสินค้าให้ตรง</span>}
+                    {l.productId && l.guess && (
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">
+                        ระบบเดา — ตรวจสอบ{" "}
+                        <button type="button" onClick={() => updateLine(idx, { guess: false })} className="font-semibold underline">ถูกต้อง ✓</button>
+                      </span>
+                    )}
+                    {l.mismatch && <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-red-700">⚠️ {l.mismatch}</span>}
+                  </div>
                 )}
               </div>
             ))}

@@ -12,6 +12,7 @@ interface FileItem {
   name: string;
   variation: string;
   price: number;
+  qty: number;
 }
 
 interface Candidate {
@@ -25,6 +26,7 @@ interface Row {
   item: FileItem;
   status: "mapped" | "sku_match" | "review";
   existingName?: string;
+  productId?: string;
   candidates: Candidate[];
   action: Action;
   updatePrice: boolean;
@@ -38,6 +40,8 @@ const HEADER: Record<string, keyof FileItem> = {
   "ตัวเลือกสินค้า": "variation",
   "sku unit original price": "price",
   "ราคาต่อหน่วย": "price",
+  quantity: "qty",
+  "จำนวน": "qty",
 };
 
 const clean = (v: any) => String(v ?? "").replace(/[\t\r\n]+/g, " ").trim();
@@ -95,13 +99,19 @@ function parseFile(buf: ArrayBuffer): FileItem[] {
       if (key) m[key] = r[k];
     }
     const skuId = clean(m.skuId);
-    if (!skuId || seen.has(skuId)) continue;
+    if (!skuId) continue;
+    const qty = Number(clean(m.qty).replace(/,/g, "")) || 0;
+    if (seen.has(skuId)) {
+      seen.get(skuId)!.qty += qty;
+      continue;
+    }
     const price = Number(clean(m.price).replace(/,/g, ""));
     seen.set(skuId, {
       skuId,
       name: clean(m.name),
       variation: clean(m.variation) === "ค่าเริ่มต้น" ? "" : clean(m.variation),
       price: Number.isFinite(price) ? price : 0,
+      qty,
     });
   }
   return [...seen.values()];
@@ -124,6 +134,7 @@ export default function TiktokSkuImport({
   const fileRef = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [stockMode, setStockMode] = useState<"none" | "add" | "set">("none");
   const [msg, setMsg] = useState<string | null>(null);
   const [writeSku, setWriteSku] = useState(false);
   const [done, setDone] = useState<string | null>(null);
@@ -149,11 +160,11 @@ export default function TiktokSkuImport({
       const out: Row[] = items.map((item) => {
         const mappedId = mapById.get(item.skuId);
         if (mappedId) {
-          return { item, status: "mapped", existingName: prodById.get(mappedId)?.name ?? "(สินค้าถูกลบแล้ว)", candidates: [], action: "skip", updatePrice: false };
+          return { item, status: "mapped", existingName: prodById.get(mappedId)?.name ?? "(สินค้าถูกลบแล้ว)", productId: prodById.has(mappedId) ? mappedId : undefined, candidates: [], action: "skip", updatePrice: false };
         }
         const bySku = prodBySku.get(item.skuId);
         if (bySku) {
-          return { item, status: "sku_match", existingName: bySku.name, candidates: [{ product: bySku, score: 1 }], action: "skip", updatePrice: false };
+          return { item, status: "sku_match", existingName: bySku.name, productId: bySku.id, candidates: [{ product: bySku, score: 1 }], action: "skip", updatePrice: false };
         }
         const candidates = active
           .map((p) => ({ product: p, score: score(item, p) }))
@@ -188,11 +199,16 @@ export default function TiktokSkuImport({
     setMsg(null);
     let linked = 0, created = 0, priced = 0, skuSet = 0, autoLinked = 0;
     const errors: string[] = [];
+    let stockAdj = 0;
+    const stockTarget = new Map<string, number>(); // product id → จำนวนรวมจากไฟล์
     try {
       const todo = rows.filter((r) => r.status === "review" && r.action !== "skip");
       const mapRows: { channel: string; platform_sku_id: string; product_id: string }[] = [];
       // รหัส SKU ของสินค้าตรงกับ SKU ID อยู่แล้ว แต่ยังไม่มีในตารางจับคู่ → จับคู่ให้อัตโนมัติ (ไม่แก้ราคา)
       for (const r of rows) {
+        if (stockMode !== "none" && r.status !== "review" && r.productId && r.item.qty > 0) {
+          stockTarget.set(r.productId, (stockTarget.get(r.productId) ?? 0) + r.item.qty);
+        }
         if (r.status === "sku_match" && r.candidates[0]) {
           mapRows.push({ channel: CHANNEL, platform_sku_id: r.item.skuId, product_id: r.candidates[0].product.id });
           autoLinked++;
@@ -211,7 +227,7 @@ export default function TiktokSkuImport({
               unit: "ชิ้น",
               cost_price: 0,
               sell_price: r.item.price,
-              stock_qty: 0,
+              stock_qty: stockMode !== "none" ? r.item.qty : 0,
               low_stock_threshold: 0,
             })
             .select("id")
@@ -238,7 +254,19 @@ export default function TiktokSkuImport({
           }
           linked++;
         }
+        if (r.action !== "new" && stockMode !== "none" && r.item.qty > 0) {
+          stockTarget.set(productId, (stockTarget.get(productId) ?? 0) + r.item.qty);
+        }
         mapRows.push({ channel: CHANNEL, platform_sku_id: r.item.skuId, product_id: productId });
+      }
+      // ปรับสต๊อกสินค้าที่มีอยู่แล้ว (บันทึกประวัติ + audit log ผ่าน adjust_stock)
+      for (const [pid, qty] of stockTarget) {
+        const p = products.find((x) => x.id === pid);
+        const delta = stockMode === "add" ? qty : qty - Number(p?.stock_qty ?? 0);
+        if (!delta) continue;
+        const { error } = await supabase.rpc("adjust_stock", { p_product_id: pid, p_change_qty: delta, p_note: `นำเข้าจำนวนจากไฟล์ TikTok (${stockMode === "add" ? "เพิ่ม" : "ตั้งเท่ากับ"} ${qty})` });
+        if (error) errors.push(`ปรับสต๊อก "${p?.name ?? pid}" ไม่สำเร็จ: ${error.message}`);
+        else stockAdj++;
       }
       if (mapRows.length) {
         const { error } = await supabase.from("platform_sku_map").upsert(mapRows, { onConflict: "shop_id,channel,platform_sku_id" });
@@ -247,6 +275,7 @@ export default function TiktokSkuImport({
       setDone(
         `เสร็จแล้ว — จับคู่ ${linked + autoLinked} รายการ · สร้างสินค้าใหม่ ${created} · อัปเดตราคา ${priced}` +
           (writeSku ? ` · เปลี่ยน SKU ${skuSet}` : "") +
+          (stockMode !== "none" ? ` · ปรับสต๊อกสินค้าเดิม ${stockAdj} รายการ` : "") +
           (errors.length ? ` · มีปัญหา ${errors.length} รายการ: ${errors.join(" | ")}` : "")
       );
     } catch (err: any) {
@@ -260,6 +289,7 @@ export default function TiktokSkuImport({
     ? {
         mapped: rows.filter((r) => r.status !== "review").length,
         review: rows.filter((r) => r.status === "review").length,
+        stockable: rows.filter((r) => r.status !== "review" && r.productId && r.item.qty > 0).length,
         act: rows.filter((r) => r.status === "review" && r.action !== "skip").length,
       }
     : null;
@@ -308,6 +338,26 @@ export default function TiktokSkuImport({
                 </label>
               </div>
 
+              <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 text-sm">
+                <p className="font-medium text-gray-800">ให้ใส่จำนวนสินค้าจากไฟล์เลยไหม?</p>
+                <p className="mb-2 text-xs text-gray-500">
+                  จำนวนในไฟล์คือ "จำนวนที่ลูกค้าสั่ง" รวมต่อสินค้า (ไม่ใช่สต๊อกคงเหลือ) — ใช้กับสินค้าที่จับคู่แล้วและสินค้าที่สร้างใหม่
+                </p>
+                {([
+                  ["none", "ไม่แตะสต๊อก (ค่าเริ่มต้น)"],
+                  ["add", "เพิ่มเข้าสต๊อกตามจำนวนในไฟล์ (สินค้าใหม่ = เริ่มที่จำนวนในไฟล์)"],
+                  ["set", "ตั้งสต๊อกให้เท่ากับจำนวนในไฟล์ (สินค้าใหม่ = เริ่มที่จำนวนในไฟล์)"],
+                ] as const).map(([v, t]) => (
+                  <label key={v} className="flex items-center gap-2 py-0.5 text-xs text-gray-700">
+                    <input type="radio" name="stockMode" checked={stockMode === v} onChange={() => setStockMode(v)} />
+                    {t}
+                  </label>
+                ))}
+                {stockMode !== "none" && (
+                  <p className="mt-1 text-[11px] text-amber-700">รวมรายการที่ "ข้าม (จับคู่ไว้แล้ว)" ด้วย — อัปโหลดไฟล์เดิมซ้ำจะเพิ่มซ้ำ การปรับมีประวัติในหน้าปรับสต๊อก</p>
+                )}
+              </div>
+
               <div className="space-y-2">
                 {rows.map((r, i) => {
                   if (r.status !== "review") {
@@ -316,6 +366,7 @@ export default function TiktokSkuImport({
                         <span className="rounded-full bg-gray-200 px-2 py-0.5">ข้าม</span>
                         <span className="font-mono">{r.item.skuId}</span>
                         <span>→ {r.existingName}</span>
+                        {r.item.qty > 0 && <span className="text-blue-600">· ในไฟล์ {r.item.qty} ชิ้น</span>}
                         <span className="text-gray-400">({r.status === "mapped" ? "จับคู่ไว้แล้ว" : "รหัส SKU ตรงกับสินค้าอยู่แล้ว"})</span>
                       </div>
                     );
@@ -360,7 +411,7 @@ export default function TiktokSkuImport({
                               : `เปลี่ยนราคา ฿${baht(Number(chosen.sell_price))} → ฿${baht(r.item.price)}`}
                           </label>
                         )}
-                        {r.action === "new" && <span className="text-xs text-gray-500">สต๊อก 0 · ราคา ฿{baht(r.item.price)}</span>}
+                        {r.action === "new" && <span className="text-xs text-gray-500">สต๊อก {stockMode !== "none" ? r.item.qty : 0} · ราคา ฿{baht(r.item.price)}</span>}
                       </div>
                     </div>
                   );
@@ -377,10 +428,10 @@ export default function TiktokSkuImport({
               <button onClick={() => setRows(null)} className="rounded-lg border px-4 py-2 text-sm">เลือกไฟล์ใหม่</button>
               <button
                 onClick={apply}
-                disabled={busy || counts.act === 0}
+                disabled={busy || (counts.act === 0 && (stockMode === "none" || counts.stockable === 0))}
                 className="rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark disabled:opacity-50"
               >
-                {busy ? "กำลังบันทึก..." : `ยืนยันและบันทึก (${counts.act})`}
+                {busy ? "กำลังบันทึก..." : `ยืนยันและบันทึก (${counts.act + (stockMode !== "none" ? counts.stockable : 0)})`}
               </button>
             </div>
           </div>

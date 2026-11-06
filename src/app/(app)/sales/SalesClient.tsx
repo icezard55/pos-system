@@ -50,6 +50,10 @@ const ORDER_HEADER_MAP: Record<string, string> = {
   "เลขอ้างอิง sku (sku reference no.)": "sku",
   "ค่าคอมมิชชั่น": "fee_commission", "transaction fee": "fee_txn", "ค่าบริการ": "fee_service",
   "สถานะการสั่งซื้อ": "order_status",
+  // Lazada (1 แถว = สินค้า 1 ชิ้น ไม่มีคอลัมน์จำนวน)
+  ordernumber: "order_no", lazadasku: "platform_sku_id", sellersku: "sku", itemname: "product_name",
+  unitprice: "unit_price", sellerdiscounttotal: "seller_discount", status: "order_status",
+  orderitemid: "order_item_id", trackingcode: "tracking_number",
   "tracking id": "tracking_number", "tracking number": "tracking_number", "เลขพัสดุ": "tracking_number", "เลขพัสดุขนส่ง": "tracking_number",
   "*หมายเลขติดตามพัสดุ": "tracking_number", "หมายเลขติดตามพัสดุ": "tracking_number", "tracking no.": "tracking_number",
 };
@@ -898,12 +902,20 @@ export default function SalesClient({
             const norm = ORDER_HEADER_MAP[key.trim()] ?? ORDER_HEADER_MAP[key.trim().toLowerCase()];
             if (norm) mapped[norm] = row[key];
           }
+          // ไฟล์ Lazada: ไม่มีคอลัมน์จำนวน — 1 แถว = 1 ชิ้น ส่วนลดของผู้ขายหักจากราคาชิ้นนั้น
+          if (mapped.order_item_id !== undefined && mapped.qty === undefined) {
+            mapped.qty = 1;
+            const sd = Math.abs(Number(String(mapped.seller_discount ?? "").replace(/,/g, "")) || 0);
+            const up = Number(String(mapped.unit_price ?? "").replace(/,/g, "")) || 0;
+            if (sd > 0 && up > 0) mapped.subtotal_after_discount = Math.max(0, up - sd);
+          }
           return mapped;
         })
         .filter((r) => (r.qty && Number(r.qty) > 0) && (String(r.sku ?? "").trim() || String(r.product_name ?? "").trim()))
         .filter((r) => {
           // ข้ามออเดอร์ที่ยกเลิกแล้ว (ไฟล์ Shopee มีคอลัมน์สถานะการสั่งซื้อ)
-          if (String(r.order_status ?? "").includes("ยกเลิก")) {
+          const st = String(r.order_status ?? "").toLowerCase();
+          if (st.includes("ยกเลิก") || st.includes("cancel")) {
             cancelledSkipped++;
             return false;
           }
@@ -1118,6 +1130,10 @@ export default function SalesClient({
           <p className="rounded-lg bg-orange-50 px-3 py-2 text-xs text-orange-800">
             <b>Shopee:</b> เลือก "Shopee" ในช่องเลือกช่องทางด้านบน แล้วกด "📥 นำเข้าไฟล์ออเดอร์" เลือกไฟล์ Order.toship….xlsx
             (ไฟล์จาก Seller Centre → คำสั่งซื้อ → ส่งออก) — ระบบอ่านค่าธรรมเนียมจริงในไฟล์ให้ และจับคู่สินค้าด้วยชื่อสินค้า+ตัวเลือก (ยืนยันครั้งแรกครั้งเดียว) · ไฟล์รายได้ที่โอนแล้วใช้ปุ่ม "อัปโหลดไฟล์รายได้ Shopee" ด้านล่าง
+          </p>
+          <p className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            <b>Lazada:</b> เลือก "Lazada" ในช่องเลือกช่องทาง แล้วนำเข้าไฟล์ออเดอร์ (.xlsx) จาก Seller Center — จับคู่สินค้าด้วย lazadaSku (ยืนยันครั้งแรกครั้งเดียว หรือใช้ปุ่ม "นำเข้าสินค้า + ราคา (Lazada)" ในหน้าจัดการสต๊อกสินค้าล่วงหน้า)
+            ไฟล์ Lazada ไม่มีค่าธรรมเนียม ถ้าต้องการให้ใส่ % ค่าธรรมเนียมในช่องด้านบน
           </p>
           <p className="text-xs text-gray-400">
             รองรับไฟล์ออเดอร์จากแพลตฟอร์มที่มีคอลัมน์ เลขออเดอร์, วันที่, สินค้า, จำนวน, ราคาต่อหน่วย, SKU ID —

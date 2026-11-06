@@ -48,7 +48,7 @@ const clean = (v: any) => String(v ?? "").replace(/[\t\r\n]+/g, " ").trim();
 
 function sizeNums(s: string): string[] {
   const out: string[] = [];
-  const re = /เบอร์\s*([0-9]+(?:\.[0-9]+)?)/g;
+  const re = /เบอร์\s*[:：]?\s*([0-9]+(?:\.[0-9]+)?)/g;
   let m;
   while ((m = re.exec(s))) out.push(m[1]);
   return out;
@@ -57,7 +57,7 @@ function sizeNums(s: string): string[] {
 function stripForText(s: string) {
   return s
     .toLowerCase()
-    .replace(/เบอร์\s*[0-9.]+/g, "")
+    .replace(/เบอร์\s*[:：]?\s*[0-9.]+/g, "")
     .replace(/[\s\-_/,.()\[\]*×x:+]+/g, "");
 }
 

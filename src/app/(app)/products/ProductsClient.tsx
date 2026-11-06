@@ -6,6 +6,7 @@ import type { Product } from "@/lib/types";
 import { PRODUCT_CARD_COLORS } from "@/lib/types";
 import TiktokSkuImport from "./TiktokSkuImport";
 import ShopeeSkuImport from "./ShopeeSkuImport";
+import LazadaSkuImport from "./LazadaSkuImport";
 
 const HEADER_MAP: Record<string, string> = {
   sku: "sku", "รหัส": "sku", "รหัสสินค้า": "sku",
@@ -71,6 +72,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
   const [autoBarcode, setAutoBarcode] = useState(false);
   const [showTiktokImport, setShowTiktokImport] = useState(false);
   const [showShopeeImport, setShowShopeeImport] = useState(false);
+  const [showLazadaImport, setShowLazadaImport] = useState(false);
 
   const categories = useMemo(() => {
     return Array.from(new Set(products.map((p) => (p.category ?? "").trim()).filter(Boolean))).sort((a, b) =>
@@ -536,6 +538,14 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
           onDone={() => window.location.reload()}
         />
       )}
+      {showLazadaImport && (
+        <LazadaSkuImport
+          products={products}
+          shopId={shopId}
+          onClose={() => setShowLazadaImport(false)}
+          onDone={() => window.location.reload()}
+        />
+      )}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">จัดการสต๊อกสินค้า</h1>
         <div className="flex flex-wrap gap-2">
@@ -554,6 +564,9 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
           </button>
           <button onClick={() => setShowShopeeImport(true)} className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-2 text-sm text-orange-800 hover:bg-orange-100">
             🔗 นำเข้าสินค้า + ราคา (Shopee)
+          </button>
+          <button onClick={() => setShowLazadaImport(true)} className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-2 text-sm text-blue-800 hover:bg-blue-100">
+            🔗 นำเข้าสินค้า + ราคา (Lazada)
           </button>
           <button onClick={openCategoryManager} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50">
             🏷️ จัดการหมวดหมู่

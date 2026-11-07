@@ -13,7 +13,7 @@ export default async function PurchaseOrdersPage() {
 
   const { data: suppliers } = await supabase.from("suppliers").select("id, name").order("name");
   const products = await fetchAllRows((f, t) =>
-    supabase.from("products").select("id, sku, name, unit, cost_price").eq("is_active", true).order("name").order("id").range(f, t)
+    supabase.from("products").select("id, sku, name, unit, cost_price, alt_unit, alt_unit_qty").eq("is_active", true).order("name").order("id").range(f, t)
   );
   const { data: orders } = await supabase
     .from("purchase_orders")

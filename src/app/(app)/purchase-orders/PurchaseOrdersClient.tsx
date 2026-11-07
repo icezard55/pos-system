@@ -35,6 +35,8 @@ interface ProductOption {
   name: string;
   unit: string;
   cost_price: number;
+  alt_unit?: string | null;
+  alt_unit_qty?: number | null;
 }
 
 interface POItem {
@@ -87,6 +89,7 @@ interface DraftLine {
   productId: string;
   qty: string;
   unitCost: string;
+  useAlt?: boolean; // กรอกเป็นหน่วยใหญ่ (เช่น ม้วน) — แปลงเป็นหน่วยนับหลักตอนบันทึก
   // มาจากการอ่านรูปบิล
   billText?: string; // ข้อความรายการตามบิล
   guess?: boolean; // ระบบเดาสินค้าให้ — ต้องให้ผู้ใช้ยืนยัน
@@ -329,7 +332,16 @@ export default function PurchaseOrdersClient({
     setError(null);
     const items = lines
       .filter((l) => l.productId && Number(l.qty) > 0)
-      .map((l) => ({ product_id: l.productId, qty: Number(l.qty), unit_cost: Number(l.unitCost) || 0 }));
+      .map((l) => {
+        const p = products.find((x) => x.id === l.productId);
+        const f = l.useAlt && p?.alt_unit_qty ? Number(p.alt_unit_qty) : 1;
+        // รับเป็นหน่วยใหญ่: จำนวนคูณตัวคูณ, ราคาทุนต่อหน่วยหารตัวคูณ (ยอดรวมเท่าเดิม)
+        return {
+          product_id: l.productId,
+          qty: Math.round(Number(l.qty) * f * 100) / 100,
+          unit_cost: Math.round(((Number(l.unitCost) || 0) / f) * 10000) / 10000,
+        };
+      });
     if (items.length === 0) {
       setError("กรุณาเพิ่มรายการสินค้าอย่างน้อย 1 รายการ");
       return;
@@ -952,12 +964,33 @@ export default function PurchaseOrdersClient({
                   }}
                 />
                 <input
-                  type="number" min={0} placeholder="จำนวน"
+                  type="number" min={0} step="0.01" placeholder="จำนวน"
                   value={l.qty} onChange={(e) => updateLine(idx, { qty: e.target.value })}
                   className="w-24 rounded-lg border px-2 py-1.5 text-sm"
                 />
+                {(() => {
+                  const p = products.find((x) => x.id === l.productId);
+                  if (!p?.alt_unit || !p.alt_unit_qty) return null;
+                  return (
+                    <select
+                      value={l.useAlt ? "alt" : "base"}
+                      onChange={(e) => {
+                        const toAlt = e.target.value === "alt";
+                        const f = Number(p.alt_unit_qty);
+                        const c = Number(l.unitCost);
+                        // แปลงราคาทุนต่อหน่วยให้ตรงกับหน่วยที่เลือก
+                        updateLine(idx, { useAlt: toAlt, unitCost: c > 0 ? String(Math.round((toAlt ? c * f : c / f) * 100) / 100) : l.unitCost });
+                      }}
+                      className="rounded-lg border px-2 py-1.5 text-sm"
+                      title={`1 ${p.alt_unit} = ${Number(p.alt_unit_qty)} ${p.unit}`}
+                    >
+                      <option value="base">{p.unit}</option>
+                      <option value="alt">{p.alt_unit} (={Number(p.alt_unit_qty)} {p.unit})</option>
+                    </select>
+                  );
+                })()}
                 <input
-                  type="number" min={0} step="0.01" placeholder="ราคาทุน/หน่วย"
+                  type="number" min={0} step="0.01" placeholder={l.useAlt ? "ราคาทุน/หน่วยใหญ่" : "ราคาทุน/หน่วย"}
                   value={l.unitCost} onChange={(e) => updateLine(idx, { unitCost: e.target.value })}
                   className="w-28 rounded-lg border px-2 py-1.5 text-sm"
                 />

@@ -27,12 +27,27 @@ function channelPricesOf(f: { price_shopee: string; price_tiktok: string; price_
   return out;
 }
 
+// หน่วยใหญ่ (เช่น ม้วน): ต้องมีทั้งชื่อหน่วยและจำนวนต่อหน่วย ไม่งั้นล้างทั้งสามช่อง
+function altUnitFields(form: { alt_unit: string; alt_unit_qty: string; alt_sell_price: string }): {
+  alt_unit: string | null; alt_unit_qty: number | null; alt_sell_price: number | null;
+} {
+  const unit = form.alt_unit.trim();
+  const qty = Number(form.alt_unit_qty);
+  if (!unit || !(qty > 0)) return { alt_unit: null, alt_unit_qty: null, alt_sell_price: null };
+  return {
+    alt_unit: unit,
+    alt_unit_qty: qty,
+    alt_sell_price: form.alt_sell_price.trim() ? Number(form.alt_sell_price) : null,
+  };
+}
+
 function emptyForm() {
   return {
     id: "", sku: "", name: "", category: "", unit: "ชิ้น", cost_price: "0", sell_price: "0", stock_qty: "0",
     low_stock_threshold: "5", image_url: "", variant_group: "", variant_label: "",
     storage_location: "", no_stock_tracking: false, card_color: "", receipt_name: "", sort_order: "0",
     expiry_date: "", wholesale_price: "", member_price: "",
+    alt_unit: "", alt_unit_qty: "", alt_sell_price: "",
     price_shopee: "", price_tiktok: "", price_lazada: "", price_online: "",
   };
 }
@@ -147,6 +162,8 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
       card_color: p.card_color ?? "", receipt_name: p.receipt_name ?? "", sort_order: String(p.sort_order ?? 0),
       expiry_date: p.expiry_date ?? "", wholesale_price: p.wholesale_price != null ? String(p.wholesale_price) : "",
       member_price: p.member_price != null ? String(p.member_price) : "",
+      alt_unit: p.alt_unit ?? "", alt_unit_qty: p.alt_unit_qty != null ? String(Number(p.alt_unit_qty)) : "",
+      alt_sell_price: p.alt_sell_price != null ? String(p.alt_sell_price) : "",
       price_shopee: p.channel_prices?.shopee != null ? String(p.channel_prices.shopee) : "",
       price_tiktok: p.channel_prices?.tiktok != null ? String(p.channel_prices.tiktok) : "",
       price_lazada: p.channel_prices?.lazada != null ? String(p.channel_prices.lazada) : "",
@@ -393,6 +410,7 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
       expiry_date: form.expiry_date || null,
       wholesale_price: form.wholesale_price.trim() ? Number(form.wholesale_price) : null,
           member_price: form.member_price.trim() ? Number(form.member_price) : null,
+      ...altUnitFields(form),
       channel_prices: channelPricesOf(form),
     };
     try {
@@ -796,6 +814,27 @@ export default function ProductsClient({ initialProducts, shopId }: { initialPro
                 <label className="mb-1 block text-xs font-medium text-gray-600">หน่วยนับ</label>
                 <input className="w-full rounded-lg border px-3 py-2 text-sm" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} />
               </div>
+              {!bulkMode && (
+                <div className="col-span-full rounded-xl border border-dashed border-blue-300 bg-blue-50/50 p-3">
+                  <p className="mb-2 text-xs font-medium text-gray-700">
+                    หน่วยใหญ่ (ไม่บังคับ) — สำหรับสินค้าที่รับเป็นม้วน/กล่อง/ลัง แต่ขายปลีกเป็น "{form.unit || "หน่วยนับ"}" เช่น ผ้าปูบ่อปลา 1 ม้วน = 36 เมตร
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-xs text-gray-600">ชื่อหน่วยใหญ่</label>
+                      <input placeholder="เช่น ม้วน" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.alt_unit} onChange={(e) => setForm({ ...form, alt_unit: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-gray-600">1 {form.alt_unit || "หน่วยใหญ่"} = กี่ {form.unit || "หน่วยนับ"}</label>
+                      <input type="number" min={0} step="0.01" placeholder="เช่น 36" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.alt_unit_qty} onChange={(e) => setForm({ ...form, alt_unit_qty: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs text-gray-600">ราคาขายยกทั้ง{form.alt_unit || "หน่วยใหญ่"} (ถ้าถูกกว่าปลีก)</label>
+                      <input type="number" min={0} step="0.01" placeholder="เว้นว่าง = ราคาปลีก × จำนวน" className="w-full rounded-lg border px-3 py-2 text-sm" value={form.alt_sell_price} onChange={(e) => setForm({ ...form, alt_sell_price: e.target.value })} />
+                    </div>
+                  </div>
+                </div>
+              )}
               {!bulkMode && (
                 <>
                   <div>

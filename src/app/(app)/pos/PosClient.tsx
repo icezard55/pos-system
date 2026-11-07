@@ -325,6 +325,39 @@ export default function PosClient({
     setCart((prev) => prev.map((l) => (l.product.id === productId ? { ...l, qty } : l)));
   }
 
+  // ขายยกหน่วยใหญ่ (เช่น ม้วน): เพิ่มจำนวนตามหน่วยนับหลัก และใส่ส่วนลดให้ได้ราคายกหน่วยใหญ่ (ถ้าตั้งราคาไว้ต่ำกว่าปลีก)
+  function addAltUnit(productId: string) {
+    setCart((prev) =>
+      prev.map((l) => {
+        if (l.product.id !== productId) return l;
+        const f = Number(l.product.alt_unit_qty) || 0;
+        if (!(f > 0)) return l;
+        const retail = effectivePrice(l.product) * f;
+        const alt = l.product.alt_sell_price != null ? Number(l.product.alt_sell_price) : null;
+        const extraDiscount = alt != null ? Math.max(0, Math.round((retail - alt) * 100) / 100) : 0;
+        return { ...l, qty: Math.round((l.qty + f) * 100) / 100, discount: (Number(l.discount) || 0) + extraDiscount };
+      })
+    );
+  }
+
+  function altUnitButton(l: { product: Product; qty: number }) {
+    const f = Number(l.product.alt_unit_qty) || 0;
+    if (!l.product.alt_unit || !(f > 0)) return null;
+    const blocked = !l.product.no_stock_tracking && l.qty + f > Number(l.product.stock_qty);
+    return (
+      <button
+        type="button"
+        onClick={() => addAltUnit(l.product.id)}
+        disabled={blocked}
+        title={blocked ? "สต๊อกไม่พอสำหรับอีก 1 หน่วยใหญ่" : undefined}
+        className="mt-1 rounded-lg border border-blue-300 bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        ＋1 {l.product.alt_unit} ({f} {l.product.unit}
+        {l.product.alt_sell_price != null ? ` · ฿${Number(l.product.alt_sell_price).toLocaleString("th-TH")}` : ""})
+      </button>
+    );
+  }
+
   function updateLineDiscount(productId: string, discount: number) {
     setCart((prev) => prev.map((l) => (l.product.id === productId ? { ...l, discount: Math.max(discount, 0) } : l)));
   }
@@ -835,8 +868,9 @@ export default function PosClient({
                       <div>
                         <p className="text-sm font-medium text-gray-800">{l.product.name}</p>
                         <p className="text-xs text-gray-500">
-                          ฿{unitPrice.toLocaleString("th-TH", { minimumFractionDigits: 2 })} / หน่วย
+                          ฿{unitPrice.toLocaleString("th-TH", { minimumFractionDigits: 2 })} / {l.product.unit || "หน่วย"}
                         </p>
+                        {altUnitButton(l)}
                         {promoDiscount > 0 && (
                           <span className="mt-0.5 inline-block rounded-full bg-pink-50 px-1.5 py-0.5 text-[10px] font-normal text-pink-600">
                             🎁 -฿{promoDiscount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
@@ -918,6 +952,7 @@ export default function PosClient({
                       <td className="py-2 pr-2 align-middle text-gray-400">{idx + 1}</td>
                       <td className="py-2 pr-2 align-middle font-medium text-gray-800">
                         {l.product.name}
+                        <div>{altUnitButton(l)}</div>
                         {promoDiscount > 0 && (
                           <span className="ml-1.5 rounded-full bg-pink-50 px-1.5 py-0.5 text-[10px] font-normal text-pink-600">
                             🎁 -฿{promoDiscount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}

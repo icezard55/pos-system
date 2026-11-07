@@ -30,6 +30,9 @@ export interface Product {
   wholesale_price: number | null;
   member_price?: number | null;
   channel_prices?: Record<string, number | string> | null;
+  alt_unit?: string | null; // หน่วยใหญ่ เช่น ม้วน
+  alt_unit_qty?: number | null; // 1 หน่วยใหญ่ = กี่หน่วยนับหลัก
+  alt_sell_price?: number | null; // ราคาขายต่อหน่วยใหญ่
 }
 
 export interface Promotion {

@@ -994,6 +994,15 @@ export default function PurchaseOrdersClient({
                   value={l.unitCost} onChange={(e) => updateLine(idx, { unitCost: e.target.value })}
                   className="w-28 rounded-lg border px-2 py-1.5 text-sm"
                 />
+                {Number(l.qty) > 0 && Number(l.unitCost) > 0 && (() => {
+                  const q = Number(l.qty), c = Number(l.unitCost);
+                  const f = (n: number) => n.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+                  return (
+                    <span className="whitespace-nowrap text-sm text-gray-600">
+                      {f(c)} × {f(q)} = <b className="text-gray-900">฿{f(Math.round(q * c * 100) / 100)}</b>
+                    </span>
+                  );
+                })()}
                 {lines.length > 1 && (
                   <button type="button" onClick={() => removeLine(idx)} className="text-red-500">✕</button>
                 )}

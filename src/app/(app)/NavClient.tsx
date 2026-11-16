@@ -24,6 +24,7 @@ const links = [
   { href: "/expenses", label: "รายจ่าย", icon: "💸", roles: ["admin"] },
   { href: "/reports", label: "รายงาน", icon: "📈", roles: ["admin"] },
   { href: "/tax", label: "ภาษีประมาณการ", icon: "🧮", roles: ["admin"] },
+  { href: "/pdf-stamp", label: "ลายน้ำ PDF / ใบปะหน้า", icon: "🏷️", roles: ["admin", "cashier"] },
   { href: "/users", label: "จัดการผู้ใช้", icon: "👥", roles: ["admin"] },
   { href: "/audit-log", label: "ประวัติการดำเนินการ", icon: "🔍", roles: ["admin"] },
   { href: "/settings", label: "ตั้งค่าร้าน", icon: "⚙️", roles: ["admin"] },

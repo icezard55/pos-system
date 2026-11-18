@@ -332,6 +332,11 @@ export type ExpenseCategory =
   | "building_maintenance"
   | "paper_supplies";
 
+// ชื่อหมวดรายจ่าย: หมวดที่ผู้ใช้สร้างเอง (key ขึ้นต้นด้วย c_) อยู่ในตาราง expense_categories
+export function expenseCategoryLabel(cat: string, custom?: Record<string, string> | null): string {
+  return custom?.[cat] ?? (EXPENSE_CATEGORY_LABEL as Record<string, string>)[cat] ?? cat;
+}
+
 export type RecurringExpenseCategory = Exclude<ExpenseCategory, "shipping" | "platform_fee" | "debt_payment">;
 
 export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {

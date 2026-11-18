@@ -22,5 +22,14 @@ export default async function ExpensesPage() {
     .select("*")
     .order("day_of_month", { ascending: true });
 
-  return <ExpensesClient initialExpenses={expenses ?? []} initialRecurring={recurring ?? []} shopId={profile?.shop_id ?? ""} />;
+  const { data: customCats } = await supabase.from("expense_categories").select("key, label").order("created_at");
+
+  return (
+    <ExpensesClient
+      initialExpenses={expenses ?? []}
+      initialRecurring={recurring ?? []}
+      shopId={profile?.shop_id ?? ""}
+      initialCustomCategories={customCats ?? []}
+    />
+  );
 }

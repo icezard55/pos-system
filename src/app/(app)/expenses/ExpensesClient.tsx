@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import DocumentScanButton from "@/components/DocumentScanButton";
 import {
   EXPENSE_CATEGORY_LABEL,
+  expenseCategoryLabel,
   RECURRING_EXPENSE_CATEGORIES,
   THAI_MONTH_ABBR,
   type Expense,
@@ -53,25 +54,73 @@ export default function ExpensesClient({
   initialExpenses,
   initialRecurring,
   shopId,
+  initialCustomCategories,
 }: {
   initialExpenses: Expense[];
   initialRecurring: RecurringExpense[];
   shopId: string;
+  initialCustomCategories: { key: string; label: string }[];
 }) {
   const router = useRouter();
   const supabase = createClient();
   const [expenses, setExpenses] = useState(initialExpenses);
+  const [customCats, setCustomCats] = useState(initialCustomCategories);
+  const [showCatManager, setShowCatManager] = useState(false);
+  const customLabels = Object.fromEntries(customCats.map((c) => [c.key, c.label]));
+  const catLabel = (c: string) => expenseCategoryLabel(c, customLabels);
+  const customKeys = customCats.map((c) => c.key);
+  const allCategoryKeys = [...(Object.keys(EXPENSE_CATEGORY_LABEL) as string[]), ...customKeys];
+
+  // สร้างหมวดใหม่ (ใช้ได้เลย เช่น "บิลธุรกิจยังไม่เข้าระบบ")
+  async function createCategory(): Promise<string | null> {
+    const name = window.prompt("ชื่อหมวดรายจ่ายใหม่ (เช่น บิลธุรกิจยังไม่เข้าระบบ)")?.trim();
+    if (!name) return null;
+    if (allCategoryKeys.some((k) => catLabel(k) === name)) {
+      alert("มีหมวดชื่อนี้อยู่แล้ว");
+      return null;
+    }
+    const key = "c_" + Math.random().toString(16).slice(2, 10);
+    const { error } = await supabase.from("expense_categories").insert({ shop_id: shopId, key, label: name });
+    if (error) {
+      alert("สร้างหมวดไม่สำเร็จ: " + error.message);
+      return null;
+    }
+    setCustomCats((p) => [...p, { key, label: name }]);
+    return key;
+  }
+
+  async function renameCategory(key: string) {
+    const cur = customLabels[key];
+    const name = window.prompt("แก้ชื่อหมวด", cur)?.trim();
+    if (!name || name === cur) return;
+    const { error } = await supabase.from("expense_categories").update({ label: name }).eq("key", key);
+    if (error) return alert("แก้ชื่อไม่สำเร็จ: " + error.message);
+    setCustomCats((p) => p.map((c) => (c.key === key ? { ...c, label: name } : c)));
+  }
+
+  async function deleteCategory(key: string) {
+    const { count: n1 } = await supabase.from("expenses").select("id", { count: "exact", head: true }).eq("category", key);
+    const { count: n2 } = await supabase.from("recurring_expenses").select("id", { count: "exact", head: true }).eq("category", key);
+    if ((n1 ?? 0) + (n2 ?? 0) > 0) {
+      alert(`ลบไม่ได้ — มีรายจ่ายใช้หมวดนี้อยู่ ${(n1 ?? 0) + (n2 ?? 0)} รายการ (เปลี่ยนชื่อแทนได้)`);
+      return;
+    }
+    if (!confirm(`ลบหมวด "${customLabels[key]}" ?`)) return;
+    const { error } = await supabase.from("expense_categories").delete().eq("key", key);
+    if (error) return alert("ลบไม่สำเร็จ: " + error.message);
+    setCustomCats((p) => p.filter((c) => c.key !== key));
+  }
   const [recurring, setRecurring] = useState(initialRecurring);
 
   const [showAddExpense, setShowAddExpense] = useState(false);
-  const [category, setCategory] = useState<ExpenseCategory>("water");
+  const [category, setCategory] = useState<string>("water");
   const [amount, setAmount] = useState("");
   const [expenseDate, setExpenseDate] = useState(() => toLocalISODate(new Date()));
   const [note, setNote] = useState("");
   const [busyExpense, setBusyExpense] = useState(false);
 
   const [showAddRecurring, setShowAddRecurring] = useState(false);
-  const [rCategory, setRCategory] = useState<RecurringExpenseCategory>("water");
+  const [rCategory, setRCategory] = useState<string>("water");
   const [rAmount, setRAmount] = useState("");
   const [rDay, setRDay] = useState("1");
   const [rMonths, setRMonths] = useState<number[]>([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
@@ -227,7 +276,7 @@ export default function ExpensesClient({
   }
 
   async function handleRecordNow(rec: RecurringExpense) {
-    if (!confirm(`บันทึกเป็นรายจ่ายวันนี้ ${EXPENSE_CATEGORY_LABEL[rec.category]} ฿${Number(rec.amount).toLocaleString("th-TH")}?`)) return;
+    if (!confirm(`บันทึกเป็นรายจ่ายวันนี้ ${catLabel(rec.category)} ฿${Number(rec.amount).toLocaleString("th-TH")}?`)) return;
     setError(null);
     try {
       const { data, error } = await supabase
@@ -357,10 +406,22 @@ export default function ExpensesClient({
         {showAddRecurring && (
           <form onSubmit={handleAddRecurring} className="mb-4 space-y-3 rounded-xl border p-4">
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-              <select value={rCategory} onChange={(e) => setRCategory(e.target.value as RecurringExpenseCategory)} className="rounded-lg border px-3 py-2 text-sm">
-                {RECURRING_EXPENSE_CATEGORIES.map((c) => (
-                  <option key={c} value={c}>{EXPENSE_CATEGORY_LABEL[c]}</option>
+              <select
+                value={rCategory}
+                onChange={async (e) => {
+                  if (e.target.value === "__new") {
+                    const k = await createCategory();
+                    if (k) setRCategory(k);
+                    return;
+                  }
+                  setRCategory(e.target.value);
+                }}
+                className="rounded-lg border px-3 py-2 text-sm"
+              >
+                {[...RECURRING_EXPENSE_CATEGORIES, ...customKeys].map((c) => (
+                  <option key={c} value={c}>{catLabel(c)}</option>
                 ))}
+                <option value="__new">＋ เพิ่มหมวดใหม่...</option>
               </select>
               <input type="number" min={0} step="0.01" placeholder="จำนวนเงิน" value={rAmount} onChange={(e) => setRAmount(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
               <input type="number" min={1} max={28} placeholder="วันที่ของเดือน (1-28)" value={rDay} onChange={(e) => setRDay(e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm" />
@@ -422,7 +483,7 @@ export default function ExpensesClient({
               {recurring.map((r) => (
                 <Fragment key={r.id}>
                   <tr className="border-b last:border-0">
-                    <td className="py-2">{EXPENSE_CATEGORY_LABEL[r.category]}</td>
+                    <td className="py-2">{catLabel(r.category)}</td>
                     <td className="py-2 text-right font-medium">฿{Number(r.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                     <td className="py-2 text-center text-gray-500">วันที่ {r.day_of_month}</td>
                     <td className="py-2 text-gray-500">
@@ -455,7 +516,7 @@ export default function ExpensesClient({
                       <td colSpan={7} className="py-3">
                         <div className="flex flex-wrap items-center justify-end gap-2">
                           <span className="text-xs text-gray-500">
-                            วางแผนบันทึกล่วงหน้า {EXPENSE_CATEGORY_LABEL[r.category]} ฿{Number(r.amount).toLocaleString("th-TH")} วันที่
+                            วางแผนบันทึกล่วงหน้า {catLabel(r.category)} ฿{Number(r.amount).toLocaleString("th-TH")} วันที่
                           </span>
                           <input
                             type="date"
@@ -496,16 +557,59 @@ export default function ExpensesClient({
           >
             {showAddExpense ? "ยกเลิก" : "+ บันทึกรายจ่าย"}
           </button>
+          <button
+            type="button"
+            onClick={() => setShowCatManager((v) => !v)}
+            className="ml-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs hover:bg-gray-50"
+          >
+            🏷️ หมวดที่สร้างเอง ({customCats.length})
+          </button>
         </div>
+
+        {showCatManager && (
+          <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50/50 p-3 text-sm">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-medium text-gray-800">หมวดรายจ่ายที่สร้างเอง</span>
+              <button type="button" onClick={() => createCategory()} className="rounded-lg border bg-white px-3 py-1 text-xs hover:bg-gray-50">＋ เพิ่มหมวดใหม่</button>
+            </div>
+            {customCats.length === 0 ? (
+              <p className="text-xs text-gray-500">ยังไม่มี — เพิ่มได้ เช่น "บิลธุรกิจยังไม่เข้าระบบ" หรือเลือก "＋ เพิ่มหมวดใหม่..." ในช่องหมวดตอนบันทึกรายจ่าย</p>
+            ) : (
+              <ul className="space-y-1">
+                {customCats.map((c) => (
+                  <li key={c.key} className="flex items-center justify-between rounded-lg bg-white px-3 py-1.5">
+                    <span>{c.label}</span>
+                    <span className="space-x-3 text-xs">
+                      <button type="button" onClick={() => renameCategory(c.key)} className="text-blue-600 hover:underline">แก้ชื่อ</button>
+                      <button type="button" onClick={() => deleteCategory(c.key)} className="text-red-500 hover:underline">ลบ</button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {showAddExpense && (
           <form onSubmit={handleAddExpense} className="mb-4 grid grid-cols-1 gap-2 rounded-xl border p-4 sm:grid-cols-4">
-            <select value={category} onChange={(e) => setCategory(e.target.value as ExpenseCategory)} className="rounded-lg border px-3 py-2 text-sm">
-              {(Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[])
+            <select
+              value={category}
+              onChange={async (e) => {
+                if (e.target.value === "__new") {
+                  const k = await createCategory();
+                  if (k) setCategory(k);
+                  return;
+                }
+                setCategory(e.target.value);
+              }}
+              className="rounded-lg border px-3 py-2 text-sm"
+            >
+              {allCategoryKeys
                 .filter((c) => c !== "shipping")
                 .map((c) => (
-                  <option key={c} value={c}>{EXPENSE_CATEGORY_LABEL[c]}</option>
+                  <option key={c} value={c}>{catLabel(c)}</option>
                 ))}
+              <option value="__new">＋ เพิ่มหมวดใหม่...</option>
             </select>
             <input type="number" min={0} step="0.01" placeholder="จำนวนเงิน" value={amount} onChange={(e) => setAmount(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
             <input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} className="rounded-lg border px-3 py-2 text-sm" />
@@ -525,8 +629,8 @@ export default function ExpensesClient({
           />
           <select value={qCat} onChange={(e) => setQCat(e.target.value)} className="rounded-lg border px-2 py-2 text-sm">
             <option value="all">ทุกหมวด</option>
-            {(Object.keys(EXPENSE_CATEGORY_LABEL) as ExpenseCategory[]).map((c) => (
-              <option key={c} value={c}>{EXPENSE_CATEGORY_LABEL[c]}</option>
+            {allCategoryKeys.map((c) => (
+              <option key={c} value={c}>{catLabel(c)}</option>
             ))}
           </select>
           <input type="date" value={qFrom} onChange={(e) => setQFrom(e.target.value)} className="rounded-lg border px-2 py-2 text-sm" title="ตั้งแต่วันที่" />
@@ -550,7 +654,7 @@ export default function ExpensesClient({
               {shownByCat.length > 1 && (
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-600">
                   {shownByCat.map(([c, v]) => (
-                    <span key={c}>{EXPENSE_CATEGORY_LABEL[c as ExpenseCategory] ?? c} ฿{v.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                    <span key={c}>{catLabel(c)} ฿{v.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
                   ))}
                 </div>
               )}
@@ -574,7 +678,7 @@ export default function ExpensesClient({
               {shown.map((e) => (
                 <tr key={e.id} className={`border-b last:border-0 ${e.expense_date > todayStr ? "bg-orange-50/50" : ""}`}>
                   <td className="py-2 text-gray-500">{new Date(e.expense_date).toLocaleDateString("th-TH")}</td>
-                  <td className="py-2">{EXPENSE_CATEGORY_LABEL[e.category]}</td>
+                  <td className="py-2">{catLabel(e.category)}</td>
                   <td className="py-2 text-right font-medium">฿{Number(e.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                   <td className="py-2">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${sourceBadgeClass[e.source]}`}>{sourceLabel[e.source]}</span>

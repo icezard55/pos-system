@@ -60,6 +60,7 @@ export default async function ReportsPage({
   const { data: accountsPayable } = await supabase.rpc("report_accounts_payable");
   const { data: accountsReceivable } = await supabase.rpc("report_accounts_receivable");
 
+  const { data: customCats } = await supabase.from("expense_categories").select("key, label");
   const { data: expenses } = await supabase
     .from("expenses")
     .select("*")
@@ -160,6 +161,7 @@ export default async function ReportsPage({
       accountsPayable={accountsPayable ?? []}
       accountsReceivable={accountsReceivable ?? []}
       expenses={(expenses as any) ?? []}
+      customCategories={Object.fromEntries((customCats ?? []).map((c: any) => [c.key, c.label]))}
     />
   );
 }

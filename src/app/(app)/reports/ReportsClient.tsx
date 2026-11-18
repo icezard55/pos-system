@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
-import { splitVat, EXPENSE_CATEGORY_LABEL, SALE_CHANNEL_LABEL, type Expense, type ExpenseCategory, type SaleChannel } from "@/lib/types";
+import { splitVat, expenseCategoryLabel, EXPENSE_CATEGORY_LABEL, SALE_CHANNEL_LABEL, type Expense, type ExpenseCategory, type SaleChannel } from "@/lib/types";
 
 interface SaleRow {
   sale_no: string;
@@ -190,6 +190,7 @@ export default function ReportsClient({
   grandProfit,
   grandFee,
   grandNet,
+  customCategories,
   dayRows,
   topProducts,
   allProductSales,
@@ -208,6 +209,7 @@ export default function ReportsClient({
   grandProfit: number;
   grandFee: number;
   grandNet: number;
+  customCategories?: Record<string, string>;
   dayRows: [string, { total: number; profit: number }][];
   topProducts: [string, { qty: number; total: number; profit: number }][];
   allProductSales: [string, { qty: number; total: number; profit: number }][];
@@ -417,7 +419,7 @@ export default function ReportsClient({
     const expensesSheet = XLSX.utils.json_to_sheet(
       expenses.map((e) => ({
         วันที่: new Date(e.expense_date).toLocaleDateString("th-TH"),
-        หมวดหมู่: EXPENSE_CATEGORY_LABEL[e.category],
+        หมวดหมู่: expenseCategoryLabel(e.category, customCategories),
         จำนวนเงิน: Number(Number(e.amount).toFixed(2)),
         ที่มา: e.source === "manual" ? "บันทึกเอง" : e.source === "po_freight" ? "ค่าขนส่ง (ใบสั่งซื้อ)" : "รายการประจำ",
         หมายเหตุ: e.note ?? "",
@@ -881,7 +883,7 @@ export default function ReportsClient({
                   .sort((a, b) => b[1] - a[1])
                   .map(([cat, amt]) => (
                     <tr key={cat} className="border-b last:border-0">
-                      <td className="py-2">{EXPENSE_CATEGORY_LABEL[cat]}</td>
+                      <td className="py-2">{expenseCategoryLabel(cat, customCategories)}</td>
                       <td className="py-2 text-right font-medium">฿{amt.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                     </tr>
                   ))}
@@ -905,7 +907,7 @@ export default function ReportsClient({
                 {expenses.map((e) => (
                   <tr key={e.id} className="border-b last:border-0">
                     <td className="py-2 text-gray-500">{new Date(e.expense_date).toLocaleDateString("th-TH")}</td>
-                    <td className="py-2">{EXPENSE_CATEGORY_LABEL[e.category]}</td>
+                    <td className="py-2">{expenseCategoryLabel(e.category, customCategories)}</td>
                     <td className="py-2 text-right font-medium">฿{Number(e.amount).toLocaleString("th-TH", { minimumFractionDigits: 2 })}</td>
                     <td className="py-2 text-gray-500">{e.note ?? "-"}</td>
                   </tr>

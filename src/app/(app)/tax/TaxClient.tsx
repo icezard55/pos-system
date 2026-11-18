@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { EXPENSE_CATEGORY_LABEL, SALE_CHANNEL_LABEL, type ExpenseCategory, type SaleChannel } from "@/lib/types";
+import { expenseCategoryLabel, SALE_CHANNEL_LABEL, type SaleChannel } from "@/lib/types";
 
 // อัตราภาษีเงินได้บุคคลธรรมดาแบบขั้นบันได (ใช้ประมาณการเท่านั้น — ตรวจสอบอัตราล่าสุดกับกรมสรรพากรก่อนยื่นจริง)
 const BRACKETS: [number, number][] = [
@@ -63,7 +63,7 @@ function save(key: string, v: unknown) {
   try { localStorage.setItem(key, JSON.stringify(v)); } catch {}
 }
 
-export default function TaxClient() {
+export default function TaxClient({ customCategories }: { customCategories?: Record<string, string> }) {
   const supabase = createClient();
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
@@ -219,7 +219,7 @@ export default function TaxClient() {
                     <label key={e.category} className={`flex items-center justify-between gap-2 ${on ? "" : "text-gray-400 line-through"}`}>
                       <span className="flex items-center gap-2">
                         <input type="checkbox" checked={on} onChange={() => toggleCat(e.category)} />
-                        {EXPENSE_CATEGORY_LABEL[e.category as ExpenseCategory] ?? e.category}
+                        {expenseCategoryLabel(e.category, customCategories)}
                         <span className="text-[11px] text-gray-400">({e.count} รายการ{on && e.no_doc > 0 ? ` · ไม่มีเอกสาร ${e.no_doc}` : ""})</span>
                       </span>
                       <span>{baht(Number(e.amount))}</span>

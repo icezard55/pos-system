@@ -454,7 +454,10 @@ export default function PurchaseOrdersClient({
         } finally {
           clearTimeout(t);
         }
-        const json = await res.json();
+        const rawText = await res.text();
+        let json: any = null;
+        try { json = JSON.parse(rawText); } catch {}
+        if (!json) throw new Error(`รูปที่ ${fi + 1}: เซิร์ฟเวอร์ตอบกลับผิดปกติ (HTTP ${res.status}) ลองใหม่อีกครั้ง`);
         if (!res.ok) throw new Error(`รูปที่ ${fi + 1}: ${json.error ?? "อ่านไม่สำเร็จ"}`);
         const r = json.result;
         if (r.bill_no && !billNoFound) billNoFound = String(r.bill_no);

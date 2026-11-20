@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
       });
     } catch (err: any) {
       if (err?.name === "AbortError") {
-        return NextResponse.json({ error: "เรียก AI นานเกินไป กรุณาลองใหม่" }, { status: 504 });
+        return NextResponse.json({ error: "เรียก AI นานเกินไป กรุณาลองใหม่" }, { status: 408 });
       }
       throw err;
     } finally {
@@ -104,7 +104,12 @@ export async function POST(req: NextRequest) {
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
       console.error("Anthropic API error", anthropicRes.status, errText);
-      return NextResponse.json({ error: "เรียก AI ไม่สำเร็จ กรุณาลองใหม่" }, { status: 502 });
+      // ใช้ 424 ไม่ใช่ 502 — Cloudflare จะแทนที่เนื้อหา 502/504 ด้วยหน้า HTML ทำให้หน้าเว็บอ่านข้อความผิดพลาดไม่ได้
+      const msg =
+        anthropicRes.status === 401 || anthropicRes.status === 403
+          ? "คีย์ AI ของระบบไม่ถูกต้องหรือหมดอายุ — ให้ผู้ดูแลระบบอัปเดต ANTHROPIC_API_KEY"
+          : "เรียก AI ไม่สำเร็จ กรุณาลองใหม่";
+      return NextResponse.json({ error: msg }, { status: 424 });
     }
 
     const anthropicJson = await anthropicRes.json();

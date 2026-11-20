@@ -518,7 +518,10 @@ export default function SalesClient({
         body: JSON.stringify({ imageBase64: base64, mediaType }),
         signal: controller.signal,
       });
-      const json = await res.json();
+      const raw = await res.text();
+      let json: any = null;
+      try { json = JSON.parse(raw); } catch {}
+      if (!json) throw new Error(`เซิร์ฟเวอร์ตอบกลับผิดปกติ (HTTP ${res.status}) — ลองใหม่อีกครั้ง หรือแจ้งผู้ดูแลระบบ`);
       if (!res.ok) throw new Error(json.error ?? "อ่านรูปไม่สำเร็จ");
       const ai: PhotoAiResult = json.result;
 

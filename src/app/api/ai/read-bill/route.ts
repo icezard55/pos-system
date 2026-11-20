@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
         signal: controller.signal,
       });
     } catch (err: any) {
-      if (err?.name === "AbortError") return NextResponse.json({ error: "เรียก AI นานเกินไป กรุณาลองใหม่" }, { status: 504 });
+      if (err?.name === "AbortError") return NextResponse.json({ error: "เรียก AI นานเกินไป กรุณาลองใหม่" }, { status: 408 });
       throw err;
     } finally {
       clearTimeout(timeout);
@@ -74,7 +74,11 @@ export async function POST(req: NextRequest) {
 
     if (!res.ok) {
       console.error("Anthropic API error", res.status, await res.text());
-      return NextResponse.json({ error: "เรียก AI ไม่สำเร็จ กรุณาลองใหม่" }, { status: 502 });
+      const msg =
+        res.status === 401 || res.status === 403
+          ? "คีย์ AI ของระบบไม่ถูกต้องหรือหมดอายุ — ให้ผู้ดูแลระบบอัปเดต ANTHROPIC_API_KEY"
+          : "เรียก AI ไม่สำเร็จ กรุณาลองใหม่";
+      return NextResponse.json({ error: msg }, { status: 424 });
     }
 
     const json = await res.json();
